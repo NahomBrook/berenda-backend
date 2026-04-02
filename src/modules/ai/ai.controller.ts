@@ -1,3 +1,4 @@
+// backend/src/modules/ai/ai.controller.ts
 import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -80,7 +81,6 @@ const extractPriceRange = (text: string) => {
   if (hasUnder && numbers.length >= 1) return { min: undefined as number | undefined, max: numbers[0] };
   if (hasOver && numbers.length >= 1) return { min: numbers[0], max: undefined as number | undefined };
 
-  // If user says "price 500" we interpret as "up to" if it looks like budget-ish.
   if (t.includes("budget") && numbers.length >= 1) return { min: undefined as number | undefined, max: numbers[0] };
 
   return { min: undefined as number | undefined, max: undefined as number | undefined };
@@ -103,7 +103,6 @@ const buildRuleBasedResponse = async (opts: {
     .find((m) => m.role === "user")
     ?.parts?.[0]?.text;
 
-  // Small context helper: if current message is vague, use last user message for extraction.
   const effectiveText = normalized.length < 8 && lastUser ? `${lastUser} ${message}` : message;
 
   const locations = extractLocation(effectiveText);
@@ -151,14 +150,12 @@ const buildRuleBasedResponse = async (opts: {
     ].join("\n");
   }
 
-  // Area questions
   if (locations.length > 0 && normalized.length <= 25) {
     return locations
       .map((loc) => `📍 **${AREA_KB[loc].title}**: ${AREA_KB[loc].description}`)
       .join("\n\n");
   }
 
-  // Location + price search fallback
   const isSearching =
     locations.length > 0 ||
     /price|budget|under|below|between|max|min|rent/i.test(effectiveText);
@@ -172,7 +169,6 @@ const buildRuleBasedResponse = async (opts: {
       };
 
       if (locations.length > 0) {
-        // Use the first match for now (simple + predictable).
         where.location = { contains: AREA_KB[locations[0]].title, mode: "insensitive" };
       }
 
@@ -223,7 +219,6 @@ const buildRuleBasedResponse = async (opts: {
     }
   }
 
-  // Addis Ababa area general
   if (/bole|kazanchis|megenagna|piassa|entoto/.test(normalized)) {
     return Object.entries(AREA_KB)
       .map(([_, v]) => `📍 **${v.title}**: ${v.description}`)
@@ -252,15 +247,12 @@ const buildRuleBasedResponse = async (opts: {
 
 export const sendAIMessage = async (req: Request, res: Response): Promise<any> => {
   try {
+    // Allow anonymous users - use "anonymous" as default userId if not authenticated
     const userFromToken = (req as any).user;
-    const userId = userFromToken?.userId || userFromToken?.id;
+    const userId = userFromToken?.userId || userFromToken?.id || "anonymous";
     const { message, conversationId } = req.body as { message?: string; conversationId?: string };
 
     console.log("🤖 AI Request:", { userId, message: message?.substring(0, 50) });
-
-    if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
 
     if (!message || !message.trim()) {
       return res.status(400).json({ message: "Message is required" });
@@ -268,13 +260,11 @@ export const sendAIMessage = async (req: Request, res: Response): Promise<any> =
 
     const conversationKey = getConversationKey(userId, conversationId);
 
-    // Get or initialize conversation history
     if (!conversations.has(conversationKey)) {
       conversations.set(conversationKey, []);
     }
     const history = conversations.get(conversationKey)!;
 
-    // Always update history with the user message first (Gemini or fallback will respond).
     history.push({ role: "user", parts: [{ text: message }] });
 
     let responseText = "";
@@ -314,10 +304,8 @@ export const sendAIMessage = async (req: Request, res: Response): Promise<any> =
       }
     }
 
-    // Update history with assistant response
     history.push({ role: "model", parts: [{ text: responseText }] });
 
-    // Manage history size - drop the oldest 2 messages (1 exchange) if > 20
     if (history.length > 20) {
       history.splice(0, 2);
     }
@@ -333,38 +321,15 @@ export const sendAIMessage = async (req: Request, res: Response): Promise<any> =
     });
   } catch (error) {
     console.error("Error in sendAIMessage:", error);
-    // Never hard-fail the UI: always return a fallback response.
     const generic = [
       "Sorry, I'm having trouble generating a response right now.",
       "",
       "I can still help you with Berenda basics: finding properties in Addis Ababa, and explaining booking/hosting steps.",
     ].join("\n");
 
-    try {
-      const userFromToken = (req as any).user;
-      const userId = userFromToken?.userId || userFromToken?.id;
-      const { message, conversationId } = req.body as { message?: string; conversationId?: string };
-
-      if (userId && message && message.trim()) {
-        const conversationKey = getConversationKey(userId, conversationId);
-        const history = conversations.get(conversationKey) ?? [];
-        const fallbackText = await buildRuleBasedResponse({ message, history }).catch(() => generic);
-
-        return res.json({
-          id: `ai-${Date.now()}`,
-          senderId: userId,
-          message: fallbackText || generic,
-          createdAt: new Date().toISOString(),
-          isAi: true,
-        });
-      }
-    } catch {
-      // ignore
-    }
-
     return res.json({
       id: `ai-${Date.now()}`,
-      senderId: "unknown",
+      senderId: "anonymous",
       message: generic,
       createdAt: new Date().toISOString(),
       isAi: true,

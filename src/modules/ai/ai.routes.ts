@@ -12,10 +12,10 @@ router.get("/test", (req, res) => {
   res.json({ message: "AI routes are working!", timestamp: new Date().toISOString() });
 });
 
-// AI chat endpoint (requires auth)
-router.post("/chat", verifyToken, sendAIMessage);
+// AI chat endpoint - NO AUTH REQUIRED (allows anonymous users)
+router.post("/chat", sendAIMessage);
 
-// Clear conversation history (requires auth)
+// Clear conversation history (requires auth - optional, can be removed if needed)
 router.delete("/chat/history", verifyToken, clearConversation);
 
 export default router;
