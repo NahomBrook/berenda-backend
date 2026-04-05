@@ -8,6 +8,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Add this to your User model in schema.prisma
 model User {
   id               String            @id @default(uuid())
   fullName         String
@@ -17,6 +18,7 @@ model User {
   passwordHash     String
   profileImageUrl  String?
   isVerified       Boolean           @default(false)
+  settings         Json?             // Add this line for user settings
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?

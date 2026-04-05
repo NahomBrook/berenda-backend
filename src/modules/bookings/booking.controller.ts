@@ -1,7 +1,15 @@
+// backend/src/modules/bookings/booking.controller.ts
 import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+
+// Helper to safely get ID from params
+const getIdParam = (param: any): string | undefined => {
+  if (param === undefined || param === null) return undefined;
+  if (Array.isArray(param)) return String(param[0]);
+  return String(param);
+};
 
 // Create a new booking
 export const createBooking = async (req: Request, res: Response) => {
@@ -11,11 +19,14 @@ export const createBooking = async (req: Request, res: Response) => {
     const { propertyId, checkIn, checkOut, guests, totalPrice } = req.body;
 
     if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     if (!propertyId || !checkIn || !checkOut) {
-      return res.status(400).json({ message: "Missing required fields: propertyId, checkIn, checkOut" });
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing required fields: propertyId, checkIn, checkOut" 
+      });
     }
 
     // Check if property exists
@@ -24,7 +35,7 @@ export const createBooking = async (req: Request, res: Response) => {
       include: {
         bookings: {
           where: {
-            status: { in: ["pending", "approved"] },
+            status: { in: ["pending", "approved", "confirmed"] },
             AND: [
               { startDate: { lt: new Date(checkOut) } },
               { endDate: { gt: new Date(checkIn) } }
@@ -35,16 +46,21 @@ export const createBooking = async (req: Request, res: Response) => {
     });
 
     if (!property) {
-      return res.status(404).json({ message: "Property not found" });
+      return res.status(404).json({ success: false, message: "Property not found" });
     }
 
     // Check for conflicting bookings
     if (property.bookings.length > 0) {
       return res.status(400).json({ 
+        success: false,
         message: "Property is not available for selected dates",
         conflicts: property.bookings
       });
     }
+
+    // Calculate total price if not provided
+    const nights = Math.ceil((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / (1000 * 60 * 60 * 24));
+    const calculatedTotalPrice = totalPrice || (property.monthlyPrice / 30) * nights;
 
     // Create the booking
     const booking = await prisma.booking.create({
@@ -53,6 +69,7 @@ export const createBooking = async (req: Request, res: Response) => {
         propertyId,
         startDate: new Date(checkIn),
         endDate: new Date(checkOut),
+        totalPrice: calculatedTotalPrice,
         status: "pending",
       },
       include: {
@@ -62,6 +79,7 @@ export const createBooking = async (req: Request, res: Response) => {
             location: true,
             monthlyPrice: true,
             media: {
+              where: { mediaType: 'image' },
               take: 1,
               select: { mediaUrl: true }
             }
@@ -73,7 +91,7 @@ export const createBooking = async (req: Request, res: Response) => {
     res.status(201).json({ success: true, data: booking });
   } catch (error: any) {
     console.error("Error creating booking:", error);
-    res.status(500).json({ message: error.message || "Failed to create booking" });
+    res.status(500).json({ success: false, message: error.message || "Failed to create booking" });
   }
 };
 
@@ -83,8 +101,12 @@ export const getUserBookings = async (req: Request, res: Response) => {
     const userFromToken = (req as any).user;
     const userId = userFromToken?.userId || userFromToken?.id;
 
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
     const bookings = await prisma.booking.findMany({
-      where: { renterId: userId },
+      where: { renterId: userId, deletedAt: null },
       include: {
         property: {
           select: {
@@ -93,6 +115,7 @@ export const getUserBookings = async (req: Request, res: Response) => {
             location: true,
             monthlyPrice: true,
             media: {
+              where: { mediaType: 'image' },
               take: 1,
               select: { mediaUrl: true }
             }
@@ -105,7 +128,7 @@ export const getUserBookings = async (req: Request, res: Response) => {
     res.json({ success: true, data: bookings });
   } catch (error: any) {
     console.error("Error fetching bookings:", error);
-    res.status(500).json({ message: "Failed to fetch bookings" });
+    res.status(500).json({ success: false, message: "Failed to fetch bookings" });
   }
 };
 
@@ -114,15 +137,23 @@ export const getBookingById = async (req: Request, res: Response) => {
   try {
     const userFromToken = (req as any).user;
     const userId = userFromToken?.userId || userFromToken?.id;
-    const id = req.params.id as string;
+    const id = getIdParam(req.params.id);
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    }
 
     const booking = await prisma.booking.findFirst({
-      where: { id, renterId: userId },
+      where: { id, renterId: userId, deletedAt: null },
       include: {
         property: {
           include: {
             owner: {
-              select: { fullName: true, email: true }
+              select: { fullName: true, email: true, phone: true }
             },
             media: true
           }
@@ -131,13 +162,13 @@ export const getBookingById = async (req: Request, res: Response) => {
     });
 
     if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
     res.json({ success: true, data: booking });
   } catch (error: any) {
     console.error("Error fetching booking:", error);
-    res.status(500).json({ message: "Failed to fetch booking" });
+    res.status(500).json({ success: false, message: "Failed to fetch booking" });
   }
 };
 
@@ -146,20 +177,145 @@ export const cancelBooking = async (req: Request, res: Response) => {
   try {
     const userFromToken = (req as any).user;
     const userId = userFromToken?.userId || userFromToken?.id;
-    const id = req.params.id as string;
+    const id = getIdParam(req.params.id);
 
-    const booking = await prisma.booking.updateMany({
-        where: { id , renterId: userId },
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    }
+
+    // Check if booking exists and belongs to user
+    const existingBooking = await prisma.booking.findFirst({
+      where: { id, renterId: userId, deletedAt: null }
+    });
+
+    if (!existingBooking) {
+      return res.status(404).json({ success: false, message: "Booking not found or unauthorized" });
+    }
+
+    // Check if booking can be cancelled (e.g., not already completed or cancelled)
+    if (existingBooking.status === 'completed') {
+      return res.status(400).json({ success: false, message: "Cannot cancel completed booking" });
+    }
+
+    if (existingBooking.status === 'cancelled') {
+      return res.status(400).json({ success: false, message: "Booking already cancelled" });
+    }
+
+    const booking = await prisma.booking.update({
+      where: { id },
       data: { status: "cancelled" }
     });
 
-    if (booking.count === 0) {
-      return res.status(404).json({ message: "Booking not found or unauthorized" });
-    }
-
-    res.json({ success: true, message: "Booking cancelled successfully" });
+    res.json({ success: true, message: "Booking cancelled successfully", data: booking });
   } catch (error: any) {
     console.error("Error cancelling booking:", error);
-    res.status(500).json({ message: "Failed to cancel booking" });
+    res.status(500).json({ success: false, message: "Failed to cancel booking" });
+  }
+};
+
+// Get bookings for properties owned by the user (for hosts)
+export const getHostBookings = async (req: Request, res: Response) => {
+  try {
+    const userFromToken = (req as any).user;
+    const userId = userFromToken?.userId || userFromToken?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        property: {
+          ownerId: userId
+        },
+        deletedAt: null
+      },
+      include: {
+        property: {
+          select: {
+            id: true,
+            title: true,
+            location: true,
+            media: {
+              where: { mediaType: 'image' },
+              take: 1,
+              select: { mediaUrl: true }
+            }
+          }
+        },
+        renter: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            phone: true
+          }
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    res.json({ success: true, data: bookings });
+  } catch (error: any) {
+    console.error("Error fetching host bookings:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch bookings" });
+  }
+};
+
+// Update booking status (for hosts/admins)
+export const updateBookingStatus = async (req: Request, res: Response) => {
+  try {
+    const userFromToken = (req as any).user;
+    const userId = userFromToken?.userId || userFromToken?.id;
+    const id = getIdParam(req.params.id);
+    const { status } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    }
+
+    if (!status || !['pending', 'approved', 'rejected', 'completed'].includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid status" });
+    }
+
+    // Check if user owns the property
+    const booking = await prisma.booking.findFirst({
+      where: { id },
+      include: {
+        property: {
+          select: { ownerId: true }
+        }
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    if (booking.property.ownerId !== userId) {
+      return res.status(403).json({ success: false, message: "Unauthorized to update this booking" });
+    }
+
+    const updatedBooking = await prisma.booking.update({
+      where: { id },
+      data: { status }
+    });
+
+    res.json({ 
+      success: true, 
+      message: `Booking status updated to ${status}`,
+      data: updatedBooking 
+    });
+  } catch (error: any) {
+    console.error("Error updating booking status:", error);
+    res.status(500).json({ success: false, message: "Failed to update booking status" });
   }
 };

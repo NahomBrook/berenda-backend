@@ -4,6 +4,36 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// Define types for Nominatim API responses
+interface NominatimAddress {
+  city?: string;
+  town?: string;
+  village?: string;
+  country?: string;
+}
+
+interface NominatimResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  address?: NominatimAddress;
+}
+
+interface NominatimReverseResult {
+  display_name: string;
+  address?: NominatimAddress;
+}
+
+// Helper to fetch real locations from Nominatim
+async function fetchFromNominatim(query: string): Promise<NominatimResult[]> {
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10&addressdetails=1`
+  );
+  const data = await response.json();
+  return data as NominatimResult[];
+}
+
 export const searchLocations = async (req: Request, res: Response) => {
   try {
     const { q } = req.query;
@@ -14,57 +44,58 @@ export const searchLocations = async (req: Request, res: Response) => {
       return res.status(200).json({ success: true, data: [] });
     }
 
-    // Search in properties for unique locations
-    const properties = await prisma.property.findMany({
-      where: {
-        OR: [
-          { location: { contains: q, mode: 'insensitive' } },
-          { title: { contains: q, mode: 'insensitive' } }
-        ],
-        deletedAt: null,
-        approvalStatus: 'approved'
-      },
-      select: {
-        location: true,
-        latitude: true,
-        longitude: true,
-        title: true
-      },
-      distinct: ['location'],
-      take: 10
-    });
+    // Search from OpenStreetMap Nominatim first
+    let locations: any[] = [];
+    
+    try {
+      const results = await fetchFromNominatim(q);
+      locations = results.map((result: NominatimResult) => ({
+        id: result.place_id.toString(),
+        name: result.display_name.split(',')[0],
+        city: result.address?.city || result.address?.town || result.address?.village || '',
+        country: result.address?.country || '',
+        latitude: parseFloat(result.lat),
+        longitude: parseFloat(result.lon),
+        display_name: result.display_name
+      }));
+      console.log(`📍 Found ${locations.length} matching locations from Nominatim`);
+    } catch (error) {
+      console.error('Nominatim search failed, falling back to local database:', error);
+    }
 
-    console.log(`📍 Found ${properties.length} matching locations`);
+    // If Nominatim returns no results, try local database
+    if (locations.length === 0) {
+      const properties = await prisma.property.findMany({
+        where: {
+          OR: [
+            { location: { contains: q, mode: 'insensitive' } },
+            { title: { contains: q, mode: 'insensitive' } }
+          ],
+          deletedAt: null,
+          approvalStatus: 'approved'
+        },
+        select: {
+          location: true,
+          latitude: true,
+          longitude: true,
+          title: true
+        },
+        distinct: ['location'],
+        take: 10
+      });
 
-    // Format as locations
-    const locations = properties.map(prop => {
-      // Parse location string (format: "name, city, country")
-      const parts = prop.location.split(',').map(p => p.trim());
-      return {
-        id: prop.location,
-        name: parts[0] || prop.location,
-        city: parts[1] || '',
-        country: parts[2] || '',
-        latitude: prop.latitude,
-        longitude: prop.longitude
-      };
-    });
-
-    // If no locations found from properties, add some mock popular locations
-    if (locations.length === 0 && q.length > 2) {
-      const mockLocations = [
-        { id: "1", name: "New York", city: "New York", country: "USA", latitude: 40.7128, longitude: -74.0060 },
-        { id: "2", name: "Los Angeles", city: "Los Angeles", country: "USA", latitude: 34.0522, longitude: -118.2437 },
-        { id: "3", name: "Chicago", city: "Chicago", country: "USA", latitude: 41.8781, longitude: -87.6298 },
-        { id: "4", name: "London", city: "London", country: "UK", latitude: 51.5074, longitude: -0.1278 },
-        { id: "5", name: "Paris", city: "Paris", country: "France", latitude: 48.8566, longitude: 2.3522 },
-        { id: "6", name: "Tokyo", city: "Tokyo", country: "Japan", latitude: 35.6762, longitude: 139.6503 }
-      ].filter(loc => 
-        loc.name.toLowerCase().includes(q.toLowerCase()) ||
-        loc.city.toLowerCase().includes(q.toLowerCase())
-      );
-      
-      return res.status(200).json({ success: true, data: mockLocations });
+      locations = properties.map(prop => {
+        const parts = prop.location.split(',').map(p => p.trim());
+        return {
+          id: prop.location,
+          name: parts[0] || prop.location,
+          city: parts[1] || '',
+          country: parts[2] || '',
+          latitude: prop.latitude,
+          longitude: prop.longitude
+        };
+      });
+      console.log(`📍 Found ${locations.length} matching locations from local database`);
     }
 
     res.status(200).json({ success: true, data: locations });
@@ -74,5 +105,33 @@ export const searchLocations = async (req: Request, res: Response) => {
       success: false, 
       message: error.message || 'Failed to search locations' 
     });
+  }
+};
+
+// Get location details by coordinates
+export const getLocationByCoordinates = async (req: Request, res: Response) => {
+  try {
+    const { lat, lng } = req.query;
+    
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, message: "Latitude and longitude are required" });
+    }
+    
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
+    );
+    const data = await response.json() as NominatimReverseResult;
+    
+    res.status(200).json({ 
+      success: true, 
+      data: {
+        address: data.display_name,
+        city: data.address?.city || data.address?.town || data.address?.village,
+        country: data.address?.country
+      }
+    });
+  } catch (error: any) {
+    console.error('Error getting location by coordinates:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };

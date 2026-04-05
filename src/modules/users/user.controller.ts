@@ -2,7 +2,6 @@
 import { Request, Response } from "express";
 import prisma from "../../lib/prisma";
 
-// Example controller for listing users
 export const listUsers = async (req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
@@ -35,7 +34,6 @@ export const listUsers = async (req: Request, res: Response) => {
   }
 };
 
-// Get logged-in user profile
 export const getProfile = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id;
@@ -76,7 +74,6 @@ export const getProfile = async (req: Request, res: Response) => {
   }
 };
 
-// Update profile + avatar
 export const updateProfile = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id;
@@ -88,19 +85,19 @@ export const updateProfile = async (req: Request, res: Response) => {
       });
     }
 
-    const { fullName, phone, location } = req.body;
-
+    const { fullName, phone } = req.body;
     const profileImageUrl = req.file
       ? req.file.path || (req.file as any).secure_url || `/uploads/${req.file.filename}`
       : undefined;
 
+    const updateData: any = {};
+    if (fullName) updateData.fullName = fullName;
+    if (phone) updateData.phone = phone;
+    if (profileImageUrl) updateData.profileImageUrl = profileImageUrl;
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: {
-        fullName: fullName || undefined,
-        phone: phone || undefined,
-        ...(profileImageUrl && { profileImageUrl }),
-      },
+      data: updateData,
     });
 
     res.json({
@@ -112,6 +109,69 @@ export const updateProfile = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: "Failed to update profile",
+    });
+  }
+};
+
+export const getUserSettings = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        settings: true,
+      },
+    });
+
+    const defaultSettings = {
+      emailNotifications: {
+        newMessages: true,
+        bookingConfirmations: true,
+        promotionalOffers: false,
+      },
+      privacy: {
+        profilePublic: true,
+        showEmail: false,
+      },
+      language: "en",
+      region: "US",
+    };
+
+    res.json({
+      success: true,
+      data: user?.settings || defaultSettings,
+    });
+  } catch (error) {
+    console.error("Error fetching settings:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch settings",
+    });
+  }
+};
+
+export const updateUserSettings = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+    const settings = req.body;
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        settings: settings,
+      },
+    });
+
+    res.json({
+      success: true,
+      data: updatedUser.settings,
+    });
+  } catch (error) {
+    console.error("Error updating settings:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update settings",
     });
   }
 };

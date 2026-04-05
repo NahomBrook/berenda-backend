@@ -1,43 +1,36 @@
 // backend/src/modules/properties/property.routes.ts
 import { Router } from "express";
-import { 
-  createProperty, 
-  getProperties, 
-  getPropertyById, 
-  updateProperty, 
-  deleteProperty,
-  uploadPropertyImages,
-  searchProperties
-} from "./property.controller";
-import { checkPropertyEligibility } from "./property-availability.controller";
+import * as propertyController from "./property.controller";
 import { verifyToken } from "../../middlewares/auth.middleware";
-import { upload } from "../../config/cloudinary";
+import upload from "../../middlewares/upload";
 
 const router = Router();
 
-// ========== IMPORTANT: Specific routes FIRST, then parameterized routes ==========
+// Public routes (no authentication required)
+router.get("/", propertyController.getProperties);
+router.get("/search", propertyController.searchProperties);
+router.get("/location/:location", propertyController.getPropertiesByLocation);
+router.get("/:id", propertyController.getPropertyById);
 
-// Test route - must come BEFORE /:id
-router.get("/test", (req, res) => {
-  res.json({ message: "Property routes are working!", timestamp: new Date().toISOString() });
-});
+// Protected routes (authentication required)
+router.use(verifyToken); // All routes below this line require authentication
 
-// Search route - must come BEFORE /:id
-router.get("/search", searchProperties);
+// User's own properties
+router.get("/user/properties", propertyController.getUserProperties);
 
-// Public routes with parameters - these come after specific routes
-router.get("/", getProperties);
-router.get("/:id", getPropertyById);
+// Create property
+router.post("/", propertyController.createProperty);
 
-// Availability check - this is a POST route, so it won't conflict with GET /:id
-router.post("/:id/check-availability", checkPropertyEligibility);
+// Update property
+router.patch("/:id", propertyController.updateProperty);
 
-// Protected routes
-router.post("/", verifyToken, createProperty);
-router.patch("/:id", verifyToken, updateProperty);
-router.delete("/:id", verifyToken, deleteProperty);
+// Delete property
+router.delete("/:id", propertyController.deleteProperty);
 
-// Multi-image upload route
-router.post("/:propertyId/images", verifyToken, upload.array("images", 5), uploadPropertyImages);
+// Upload property images
+router.post("/:propertyId/images", upload.array("images", 10), propertyController.uploadPropertyImages);
+
+// Update property status (admin only - you may want to add admin check middleware)
+router.patch("/:id/status", propertyController.updatePropertyStatus);
 
 export default router;

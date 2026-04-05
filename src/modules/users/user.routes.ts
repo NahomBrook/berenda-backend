@@ -8,13 +8,9 @@ const router = Router();
 
 // Specific routes must come BEFORE generic routes
 router.get("/profile", verifyToken, UsersController.getProfile);
-
-router.put(
-  "/profile",
-  verifyToken,
-  upload.single("avatar"),
-  UsersController.updateProfile
-);
+router.put("/profile", verifyToken, upload.single("avatar"), UsersController.updateProfile);
+router.get("/settings", verifyToken, UsersController.getUserSettings);
+router.put("/settings", verifyToken, UsersController.updateUserSettings);
 
 // Generic route at the end
 router.get("/", UsersController.listUsers);

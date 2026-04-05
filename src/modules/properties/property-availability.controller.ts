@@ -4,13 +4,9 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// Added Promise<any> to satisfy Express async handler types
 export const checkPropertyEligibility = async (req: Request, res: Response): Promise<any> => {
   try {
-    // FIX 1: Explicitly cast 'id' as a string to fix the TS2322 error
     const id = req.params.id as string;
-    
-    // Explicitly cast variables from the body
     const checkIn = req.body.checkIn as string;
     const checkOut = req.body.checkOut as string;
     const guests = Number(req.body.guests) || 1;
@@ -48,7 +44,7 @@ export const checkPropertyEligibility = async (req: Request, res: Response): Pro
       include: {
         bookings: {
           where: {
-            status: { in: ["pending", "approved"] },
+            status: { in: ["confirmed", "approved"] },
             AND: [
               { startDate: { lt: checkOutDate } },
               { endDate: { gt: checkInDate } }
@@ -65,11 +61,10 @@ export const checkPropertyEligibility = async (req: Request, res: Response): Pro
       });
     }
 
-    // FIX 2: Cast property to 'any' so TypeScript stops complaining about 
-    // the 'bookings' property missing from the Prisma schema generated on Render
+    // Cast property to any to handle Prisma type issues
     const propertyData = property as any;
 
-    // Check if property is available using the bypassed type
+    // Check if property is available
     const hasConflictingBookings = propertyData.bookings && propertyData.bookings.length > 0;
     const isAvailable = propertyData.isAvailable && !hasConflictingBookings;
 

@@ -26,7 +26,7 @@ const getIdParam = (param: any): string | undefined => {
   return String(param);
 };
 
-// GET ALL (With Full Filters including checkIn/checkOut)
+// GET ALL PROPERTIES (With Full Filters including checkIn/checkOut)
 export const getProperties = async (req: Request, res: Response) => {
   try {
     const { 
@@ -40,7 +40,7 @@ export const getProperties = async (req: Request, res: Response) => {
       offset = '0'
     } = req.query;
 
-    // Build where clause - using any to bypass strict Prisma typing for complex filters
+    // Build where clause
     const where: any = {
       deletedAt: null,
       approvalStatus: 'approved',
@@ -103,11 +103,29 @@ export const getProperties = async (req: Request, res: Response) => {
         media: {
           where: { mediaType: 'image' },
           take: 5
+        },
+        reviews: {
+          select: {
+            rating: true,
+          }
         }
       },
       orderBy: { createdAt: 'desc' },
       take: getNumberParam(limit) || 20,
       skip: getNumberParam(offset) || 0
+    });
+
+    // Calculate average rating for each property
+    const propertiesWithRating = properties.map(property => {
+      const avgRating = property.reviews.length > 0
+        ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
+        : null;
+      
+      return {
+        ...property,
+        averageRating: avgRating,
+        reviewsCount: property.reviews.length
+      };
     });
 
     const total = await prisma.property.count({ where });
@@ -116,7 +134,7 @@ export const getProperties = async (req: Request, res: Response) => {
       success: true, 
       count: properties.length,
       total,
-      data: properties 
+      data: propertiesWithRating 
     });
   } catch (error: any) {
     console.error('Error fetching properties:', error);
@@ -193,19 +211,36 @@ export const searchProperties = async (req: Request, res: Response) => {
       include: {
         owner: { select: { fullName: true, email: true } },
         media: { take: 5 },
+        reviews: {
+          select: {
+            rating: true,
+          }
+        }
       },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
 
-    res.json({ success: true, count: properties.length, data: properties });
+    const propertiesWithRating = properties.map(property => {
+      const avgRating = property.reviews.length > 0
+        ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
+        : null;
+      
+      return {
+        ...property,
+        averageRating: avgRating,
+        reviewsCount: property.reviews.length
+      };
+    });
+
+    res.json({ success: true, count: properties.length, data: propertiesWithRating });
   } catch (error) {
     console.error('Error searching properties:', error);
     res.status(500).json({ message: 'Search failed' });
   }
 };
 
-// GET BY ID - FIXED: proper ID handling
+// GET PROPERTY BY ID
 export const getPropertyById = async (req: Request, res: Response) => {
   try {
     const id = getIdParam(req.params.id);
@@ -218,19 +253,45 @@ export const getPropertyById = async (req: Request, res: Response) => {
       include: { 
         owner: { select: { fullName: true, email: true, profileImageUrl: true } },
         media: true,
-        amenities: { include: { amenity: true } }
+        amenities: { include: { amenity: true } },
+        reviews: {
+          include: {
+            reviewer: {
+              select: {
+                fullName: true,
+                profileImageUrl: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' }
+        }
       }
     });
 
-    if (!property) return res.status(404).json({ message: "Property not found" });
-    res.status(200).json({ success: true, data: property });
+    if (!property) {
+      return res.status(404).json({ success: false, message: "Property not found" });
+    }
+
+    // Calculate average rating
+    const avgRating = property.reviews.length > 0
+      ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
+      : null;
+
+    res.status(200).json({ 
+      success: true, 
+      data: {
+        ...property,
+        averageRating: avgRating,
+        reviewsCount: property.reviews.length
+      }
+    });
   } catch (error: any) {
     console.error("Error getting property by ID:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// CREATE
+// CREATE PROPERTY
 export const createProperty = async (req: Request, res: Response) => {
   try {
     const { 
@@ -249,7 +310,15 @@ export const createProperty = async (req: Request, res: Response) => {
     const ownerId = (req as any).user?.userId || (req as any).user?.id;
 
     if (!ownerId) {
-      return res.status(401).json({ message: "Unauthorized: No owner ID found" });
+      return res.status(401).json({ success: false, message: "Unauthorized: No owner ID found" });
+    }
+
+    // Validate required fields
+    if (!title || !description || !location || !monthlyPrice) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing required fields: title, description, location, monthlyPrice" 
+      });
     }
 
     const newProperty = await prisma.property.create({
@@ -257,8 +326,8 @@ export const createProperty = async (req: Request, res: Response) => {
         title,
         description,
         location,
-        latitude: latitude || 0,
-        longitude: longitude || 0,
+        latitude: latitude ? parseFloat(latitude) : 0,
+        longitude: longitude ? parseFloat(longitude) : 0,
         monthlyPrice: parseFloat(monthlyPrice),
         bedrooms: bedrooms ? parseInt(bedrooms) : null,
         bathrooms: bathrooms ? parseFloat(bathrooms) : null,
@@ -267,6 +336,9 @@ export const createProperty = async (req: Request, res: Response) => {
         ownerId,
         approvalStatus: 'pending',
       },
+      include: {
+        media: true
+      }
     });
 
     res.status(201).json({ success: true, data: newProperty });
@@ -276,7 +348,7 @@ export const createProperty = async (req: Request, res: Response) => {
   }
 };
 
-// UPDATE
+// UPDATE PROPERTY
 export const updateProperty = async (req: Request, res: Response) => {
   try {
     const id = getIdParam(req.params.id);
@@ -286,22 +358,27 @@ export const updateProperty = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Invalid ID" });
     }
 
-    const updateResult = await prisma.property.updateMany({
-      where: { id, ownerId },
+    // Check if property exists and belongs to user
+    const existingProperty = await prisma.property.findFirst({
+      where: { id, ownerId, deletedAt: null }
+    });
+
+    if (!existingProperty) {
+      return res.status(404).json({ success: false, message: "Property not found or unauthorized" });
+    }
+
+    const updateResult = await prisma.property.update({
+      where: { id },
       data: req.body,
     });
 
-    if (updateResult.count === 0) {
-      return res.status(404).json({ message: "Property not found or unauthorized" });
-    }
-
-    res.status(200).json({ success: true, message: "Property updated successfully" });
+    res.status(200).json({ success: true, message: "Property updated successfully", data: updateResult });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// DELETE (Soft Delete)
+// DELETE PROPERTY (Soft Delete)
 export const deleteProperty = async (req: Request, res: Response) => {
   try {
     const id = getIdParam(req.params.id);
@@ -317,7 +394,7 @@ export const deleteProperty = async (req: Request, res: Response) => {
     });
 
     if (deleteResult.count === 0) {
-      return res.status(404).json({ message: "Property not found or unauthorized" });
+      return res.status(404).json({ success: false, message: "Property not found or unauthorized" });
     }
 
     res.status(200).json({ success: true, message: "Property deleted successfully" });
@@ -326,10 +403,59 @@ export const deleteProperty = async (req: Request, res: Response) => {
   }
 };
 
+// GET USER'S PROPERTIES (for Hosting tab)
+export const getUserProperties = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const properties = await prisma.property.findMany({
+      where: { 
+        ownerId: userId,
+        deletedAt: null,
+      },
+      include: {
+        media: {
+          where: { mediaType: 'image' },
+          take: 1,
+        },
+        bookings: {
+          where: {
+            status: { in: ['pending', 'approved', 'confirmed'] }
+          },
+          take: 5
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({
+      success: true,
+      data: properties,
+    });
+  } catch (error) {
+    console.error("Error fetching user properties:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch properties",
+    });
+  }
+};
+
 // GET PROPERTIES BY LOCATION
 export const getPropertiesByLocation = async (req: Request, res: Response) => {
   try {
     const locationParam = getIdParam(req.params.location);
+    
+    if (!locationParam) {
+      return res.status(400).json({ success: false, message: "Location parameter is required" });
+    }
     
     const properties = await prisma.property.findMany({
       where: {
@@ -355,7 +481,7 @@ export const getPropertiesByLocation = async (req: Request, res: Response) => {
   }
 };
 
-// UPLOAD IMAGES
+// UPLOAD PROPERTY IMAGES
 export const uploadPropertyImages = async (req: Request, res: Response) => {
   try {
     const propertyId = getIdParam(req.params.propertyId);
@@ -367,6 +493,16 @@ export const uploadPropertyImages = async (req: Request, res: Response) => {
 
     if (!files || files.length === 0) {
       return res.status(400).json({ success: false, message: "No image files provided" });
+    }
+
+    // Check if property exists and user owns it
+    const ownerId = (req as any).user?.userId || (req as any).user?.id;
+    const property = await prisma.property.findFirst({
+      where: { id: propertyId, ownerId }
+    });
+
+    if (!property) {
+      return res.status(404).json({ success: false, message: "Property not found or unauthorized" });
     }
 
     const mediaEntries = [] as any[];
@@ -393,5 +529,33 @@ export const uploadPropertyImages = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error uploading images:", error);
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// UPDATE PROPERTY STATUS (for admin)
+export const updatePropertyStatus = async (req: Request, res: Response) => {
+  try {
+    const id = getIdParam(req.params.id);
+    const { approvalStatus } = req.body;
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Invalid property ID" });
+    }
+
+    // Check if user is admin (you may want to add role check here)
+    const property = await prisma.property.update({
+      where: { id },
+      data: { approvalStatus },
+    });
+
+    res.status(200).json({ 
+      success: true, 
+      message: `Property status updated to ${approvalStatus}`,
+      data: property 
+    });
+  } catch (error: any) {
+    console.error("Error updating property status:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
