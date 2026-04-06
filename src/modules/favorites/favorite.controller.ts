@@ -2,6 +2,49 @@
 import { Request, Response } from "express";
 import prisma from "../../lib/prisma";
 
+// Helper function to safely get string from params
+const getStringParam = (param: any): string => {
+  if (Array.isArray(param)) return param[0];
+  return String(param || "");
+};
+
+// Define the type for the favorite with nested property
+type FavoriteWithProperty = {
+  id: string;
+  userId: string;
+  propertyId: string;
+  createdAt: Date;
+  property: {
+    id: string;
+    title: string;
+    location: string;
+    monthlyPrice: number;
+    description: string;
+    bedrooms: number | null;
+    bathrooms: number | null;
+    area: number | null;
+    maxGuests: number | null;
+    latitude: number;
+    longitude: number;
+    isAvailable: boolean;
+    approvalStatus: string;
+    ownerId: string;
+    createdAt: Date;
+    updatedAt: Date;
+    deletedAt: Date | null;
+    media: Array<{
+      id: string;
+      mediaUrl: string;
+      mediaType: string;
+      propertyId: string;
+      createdAt: Date;
+    }>;
+    reviews: Array<{
+      rating: number;
+    }>;
+  };
+};
+
 export const getFavorites = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id;
@@ -33,17 +76,21 @@ export const getFavorites = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    const wishlistItems = favorites.map(fav => {
-      const avgRating = fav.property.reviews.length > 0
-        ? fav.property.reviews.reduce((sum, review) => sum + review.rating, 0) / fav.property.reviews.length
+    // Type assertion to fix the TypeScript error
+    const typedFavorites = favorites as unknown as FavoriteWithProperty[];
+    
+    const wishlistItems = typedFavorites.map((fav) => {
+      const property = fav.property;
+      const avgRating = property.reviews && property.reviews.length > 0
+        ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
         : 4.5;
       
       return {
-        id: fav.property.id,
-        title: fav.property.title,
-        location: fav.property.location,
-        price: fav.property.monthlyPrice,
-        imageUrl: fav.property.media[0]?.mediaUrl || "/placeholder.png",
+        id: property.id,
+        title: property.title,
+        location: property.location,
+        price: property.monthlyPrice,
+        imageUrl: property.media && property.media[0]?.mediaUrl || "/placeholder.png",
         rating: Number(avgRating.toFixed(1)),
         favoriteId: fav.id,
       };
@@ -81,8 +128,11 @@ export const addFavorite = async (req: Request, res: Response) => {
       });
     }
 
+    // Ensure propertyId is a string
+    const propertyIdStr = getStringParam(propertyId);
+
     const property = await prisma.property.findUnique({
-      where: { id: propertyId },
+      where: { id: propertyIdStr },
     });
 
     if (!property) {
@@ -96,7 +146,7 @@ export const addFavorite = async (req: Request, res: Response) => {
       where: {
         userId_propertyId: {
           userId,
-          propertyId,
+          propertyId: propertyIdStr,
         },
       },
     });
@@ -111,7 +161,7 @@ export const addFavorite = async (req: Request, res: Response) => {
     const favorite = await prisma.favorite.create({
       data: {
         userId,
-        propertyId,
+        propertyId: propertyIdStr,
       },
     });
 
@@ -141,11 +191,21 @@ export const removeFavorite = async (req: Request, res: Response) => {
       });
     }
 
+    if (!propertyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Property ID is required",
+      });
+    }
+
+    // Ensure propertyId is a string
+    const propertyIdStr = getStringParam(propertyId);
+
     await prisma.favorite.delete({
       where: {
         userId_propertyId: {
           userId,
-          propertyId,
+          propertyId: propertyIdStr,
         },
       },
     });
