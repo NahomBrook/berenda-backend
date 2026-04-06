@@ -12,6 +12,8 @@ import chatRoutes from "./modules/chat/chat.routes";
 import locationRoutes from "./modules/locations/location.routes"; 
 import aiRoutes from "./modules/ai/ai.routes";
 import paymentRoutes from "./modules/payments/payments.routes";
+import favoriteRoutes from "./modules/favorites/favorite.routes";
+
 
 const app = express();
 
@@ -91,6 +93,8 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/locations", locationRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/favorites", favoriteRoutes);
+
 
 // ==================== LEGACY HEALTH CHECK ====================
 app.get("/health", (req: Request, res: Response) => {
