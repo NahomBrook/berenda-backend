@@ -22,8 +22,8 @@ router.use(verifyToken);
 router.get("/", getChats);
 router.get("/unread", getUnreadCount);
 router.post("/", createChat);
-router.get("/:chatId", getChatById);
-router.get("/:chatId/messages", getMessages);
-router.post("/:chatId/messages", sendMessage);
+router.get("/:id", getChatById);
+router.get("/:id/messages", getMessages);
+router.post("/:id/messages", sendMessage);
 
 export default router;

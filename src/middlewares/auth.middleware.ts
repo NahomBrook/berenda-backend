@@ -3,8 +3,8 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma";
 
-// Use the same JWT_SECRET that was used to sign the tokens
-const JWT_SECRET = process.env.JWT_SECRET || "superlongrandomaccesssecret";
+// Use the same secret that was used to sign the tokens (JWT_ACCESS_SECRET takes priority)
+const JWT_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || "superlongrandomaccesssecret";
 
 export const verifyToken = async (req: Request, res: Response, next: NextFunction) => {
   console.log("=== Auth Middleware Debug ===");

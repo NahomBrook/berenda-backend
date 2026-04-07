@@ -3,6 +3,8 @@ import { Request, Response, NextFunction } from "express";
 import * as AuthService from "./auth.service";
 import { sendResponse } from "../../utils/response";
 
+const isGmailAddress = (email: string) => /^[a-zA-Z0-9._%+\-]+@gmail\.com$/i.test(email.trim());
+
 export const register = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password, fullName, role } = req.body;
@@ -11,6 +13,13 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
       return res.status(400).json({
         success: false,
         message: "Email and password are required",
+      });
+    }
+
+    if (!isGmailAddress(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only Gmail addresses (@gmail.com) are accepted",
       });
     }
 
@@ -37,6 +46,13 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       return res.status(400).json({
         success: false,
         message: "Email and password are required",
+      });
+    }
+
+    if (!isGmailAddress(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only Gmail addresses (@gmail.com) are accepted",
       });
     }
 
