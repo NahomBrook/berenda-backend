@@ -17,11 +17,6 @@ const CHAPA_WEBHOOK_SECRET = process.env.CHAPA_WEBHOOK_SECRET || CHAPA_SECRET_KE
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_URL || "https://berenda-frontend.vercel.app";
 const BACKEND_URL = process.env.BACKEND_URL || "https://berenda-backend-ow7d.onrender.com";
 
-// Chapa direct-charge type values (these differ slightly from our frontend labels)
-const CHAPA_DIRECT_CHARGE_TYPE = {
-  [PAYMENT_METHODS.TELEBIRR]: "telebirr",
-  [PAYMENT_METHODS.CBE]: "cbebirr",
-} as const;
 
 // 1. Initialize Payment
 export const initializePayment = async (req: Request, res: Response) => {
@@ -154,68 +149,44 @@ export const initializePayment = async (req: Request, res: Response) => {
     // Normalize mobile: keep digits only (Chapa expects 09/07 formats)
     const mobile = renterPhone.replace(/\D/g, "");
 
-    // Call Chapa APIs based on method
+    // Use Chapa standard checkout for all payment methods.
+    // Direct-charge (Telebirr/CBE) requires a special merchant agreement with Chapa
+    // and fails with "Charge failed to initiate" without it. The hosted checkout
+    // supports all methods (Telebirr, CBE, card, bank) via Chapa's payment page.
     let chapaData: any;
     try {
-      if (effectivePaymentMethod === PAYMENT_METHODS.TELEBIRR || effectivePaymentMethod === PAYMENT_METHODS.CBE) {
-        const chapaType = CHAPA_DIRECT_CHARGE_TYPE[effectivePaymentMethod];
+      const payload = {
+        amount: String(amount),
+        currency: "ETB",
+        email: renterEmail,
+        first_name: firstName,
+        last_name: lastName,
+        tx_ref: txRef,
+        phone_number: mobile || undefined,
+        callback_url: chapaCallbackUrl,
+        return_url: chapaReturnUrl,
+        customization: {
+          title: "Berenda Booking",
+          description: `Booking for ${property.title}`,
+        },
+        meta: {
+          bookingId: booking.id,
+          paymentMethod: effectivePaymentMethod,
+          notes: customerNotes || undefined,
+        },
+      };
 
-        const form = new FormData();
-        form.append("amount", String(amount));
-        form.append("currency", "ETB");
-        form.append("mobile", mobile);
-        form.append("tx_ref", txRef);
-        form.append("email", renterEmail);
-        form.append("first_name", firstName);
-        form.append("last_name", lastName);
-        form.append("callback_url", chapaCallbackUrl);
-        form.append("return_url", chapaReturnUrl);
+      const chapaResponse = await fetch("https://api.chapa.co/v1/transaction/initialize", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${CHAPA_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
 
-        const chapaResponse = await fetch(`https://api.chapa.co/v1/charges?type=${encodeURIComponent(chapaType)}`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${CHAPA_SECRET_KEY}`,
-          },
-          body: form,
-        });
-
-        const chapaJson: any = await chapaResponse.json();
-        chapaData = chapaJson;
-      } else {
-        // Card / Bank (use Chapa transaction initialize checkout)
-        const payload = {
-          amount: String(amount),
-          currency: "ETB",
-          email: renterEmail,
-          first_name: firstName,
-          last_name: lastName,
-          tx_ref: txRef,
-          phone_number: renterPhone || undefined,
-          callback_url: chapaCallbackUrl,
-          return_url: chapaReturnUrl,
-          customization: {
-            title: "Berenda Booking",
-            description: `Booking for ${property.title}`,
-          },
-          meta: {
-            bookingId: booking.id,
-            paymentMethod: effectivePaymentMethod,
-            notes: customerNotes || undefined,
-          },
-        };
-
-        const chapaResponse = await fetch("https://api.chapa.co/v1/transaction/initialize", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${CHAPA_SECRET_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
-
-        const chapaJson: any = await chapaResponse.json();
-        chapaData = chapaJson;
-      }
+      const chapaJson: any = await chapaResponse.json();
+      chapaData = chapaJson;
     } catch (err: any) {
       console.error("Chapa request failed:", err);
       await prisma.payment.update({ where: { id: payment.id }, data: { status: "failed" } });
