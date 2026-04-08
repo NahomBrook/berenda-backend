@@ -7,28 +7,20 @@ import prisma from "../lib/prisma";
 const JWT_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || "superlongrandomaccesssecret";
 
 export const verifyToken = async (req: Request, res: Response, next: NextFunction) => {
-  console.log("=== Auth Middleware Debug ===");
-  console.log("JWT_SECRET used:", JWT_SECRET ? "Secret is set" : "Secret is MISSING");
-  
   const authHeader = req.headers.authorization;
-  console.log("Auth Header:", authHeader ? "Present" : "Missing");
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    console.log("No valid Bearer token found");
-    return res.status(401).json({ 
-      success: false, 
-      message: "No token provided. Format should be: Bearer <token>" 
+    return res.status(401).json({
+      success: false,
+      message: "No token provided. Format should be: Bearer <token>"
     });
   }
 
   const token = authHeader.split(" ")[1];
-  console.log("Token received (first 20 chars):", token.substring(0, 20) + "...");
 
   try {
-    console.log("Attempting to verify token...");
     const decoded = jwt.verify(token, JWT_SECRET) as any;
-    console.log("Token verified successfully!");
-    
+
     // Fetch user from database with roles
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
@@ -40,15 +32,14 @@ export const verifyToken = async (req: Request, res: Response, next: NextFunctio
         }
       }
     });
-    
+
     if (!user) {
-      console.log("User not found in database");
-      return res.status(401).json({ 
-        success: false, 
-        message: "User not found" 
+      return res.status(401).json({
+        success: false,
+        message: "User not found"
       });
     }
-    
+
     // Attach user info to request
     (req as any).user = {
       userId: user.id,
@@ -58,60 +49,52 @@ export const verifyToken = async (req: Request, res: Response, next: NextFunctio
       isAdmin: user.roles.some(r => r.role.name === "ADMIN" || r.role.name === "admin"),
       isSuperAdmin: user.roles.some(r => r.role.name === "SUPER_ADMIN" || r.role.name === "super_admin"),
     };
-    
-    console.log("User roles:", (req as any).user.roles);
-    console.log("Is Admin:", (req as any).user.isAdmin);
-    
+
     next();
   } catch (err: any) {
-    console.error("JWT Verification Error Details:");
-    console.error("- Error name:", err.name);
-    console.error("- Error message:", err.message);
-    
-    return res.status(401).json({ 
+    return res.status(401).json({
       success: false,
-      message: "Invalid or expired token",
-      error: err.message 
+      message: "Invalid or expired token"
     });
   }
 };
 
 export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
   const user = (req as any).user;
-  
+
   if (!user) {
-    return res.status(401).json({ 
-      success: false, 
-      message: "Authentication required" 
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required"
     });
   }
-  
+
   if (user.isAdmin) {
     next();
   } else {
-    res.status(403).json({ 
-      success: false, 
-      message: "Access denied: Admin privileges required" 
+    res.status(403).json({
+      success: false,
+      message: "Access denied: Admin privileges required"
     });
   }
 };
 
 export const isSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
   const user = (req as any).user;
-  
+
   if (!user) {
-    return res.status(401).json({ 
-      success: false, 
-      message: "Authentication required" 
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required"
     });
   }
-  
+
   if (user.isSuperAdmin) {
     next();
   } else {
-    res.status(403).json({ 
-      success: false, 
-      message: "Access denied: Super Admin privileges required" 
+    res.status(403).json({
+      success: false,
+      message: "Access denied: Super Admin privileges required"
     });
   }
 };

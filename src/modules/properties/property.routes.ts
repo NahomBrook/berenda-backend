@@ -1,7 +1,7 @@
 // backend/src/modules/properties/property.routes.ts
 import { Router } from "express";
 import * as propertyController from "./property.controller";
-import { verifyToken } from "../../middlewares/auth.middleware";
+import { verifyToken, isAdmin } from "../../middlewares/auth.middleware";
 import upload from "../../middlewares/upload";
 import availabilityRouter from "./property-availability.routes";
 
@@ -34,6 +34,6 @@ router.post("/:propertyId/images", upload.array("images", 10), propertyControlle
 
 // Update property approval status (admin should call admin routes instead,
 // but this route is kept for host-side availability toggling)
-router.patch("/:id/status", propertyController.updatePropertyStatus);
+router.patch("/:id/status", isAdmin, propertyController.updatePropertyStatus);
 
 export default router;
