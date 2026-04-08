@@ -14,8 +14,8 @@ export const PAYMENT_METHODS = {
 
 const CHAPA_SECRET_KEY = process.env.CHAPA_SECRET_KEY || "";
 const CHAPA_WEBHOOK_SECRET = process.env.CHAPA_WEBHOOK_SECRET || CHAPA_SECRET_KEY;
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_URL || "https://berenda-frontend.vercel.app";
+const BACKEND_URL = process.env.BACKEND_URL || "https://berenda-backend-ow7d.onrender.com";
 
 // Chapa direct-charge type values (these differ slightly from our frontend labels)
 const CHAPA_DIRECT_CHARGE_TYPE = {
@@ -237,9 +237,14 @@ export const initializePayment = async (req: Request, res: Response) => {
       });
       await prisma.booking.update({ where: { id: booking.id }, data: { status: "failed" } });
 
+      const chapaMsg =
+        chapaData?.message ||
+        chapaData?.data?.message ||
+        chapaData?.error ||
+        "Failed to initialize payment gateway";
       return res.status(400).json({
         success: false,
-        message: "Failed to initialize payment gateway",
+        message: chapaMsg,
         error: chapaData,
       });
     }
