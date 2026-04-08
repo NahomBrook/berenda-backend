@@ -1,9 +1,8 @@
 // backend/src/modules/ai/ai.controller.ts
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../../lib/prisma";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const prisma = new PrismaClient();
 
 type ConversationMessage = { role: "user" | "model"; parts: { text: string }[] };
 type ConversationHistory = ConversationMessage[];

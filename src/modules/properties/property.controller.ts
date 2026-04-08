@@ -1,8 +1,7 @@
 // backend/src/modules/properties/property.controller.ts
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../../lib/prisma";
 
-const prisma = new PrismaClient();
 
 // Helper function to safely get string from query param
 const getStringParam = (param: any): string | undefined => {

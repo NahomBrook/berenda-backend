@@ -1,8 +1,7 @@
 // backend/src/modules/admin/admin.controller.ts
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../../lib/prisma";
 
-const prisma = new PrismaClient();
 
 // Helper to convert query params to string
 const getStringParam = (param: any): string => {

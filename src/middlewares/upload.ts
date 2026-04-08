@@ -1,6 +1,6 @@
 import multer from "multer";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
-import cloudinary from "../../src/config/cloudinary";
+import cloudinary from "../config/cloudinary";
 import path from "path";
 
 // Use memory storage for Vercel (no disk writes)

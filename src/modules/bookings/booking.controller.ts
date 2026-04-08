@@ -1,8 +1,7 @@
 // backend/src/modules/bookings/booking.controller.ts
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../../lib/prisma";
 
-const prisma = new PrismaClient();
 
 // Helper to safely get ID from params
 const getIdParam = (param: any): string | undefined => {

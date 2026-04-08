@@ -1,8 +1,7 @@
 // backend/src/modules/locations/location.controller.ts
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../../lib/prisma";
 
-const prisma = new PrismaClient();
 
 // Define types for Nominatim API responses
 interface NominatimAddress {

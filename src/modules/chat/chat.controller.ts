@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../../lib/prisma";
 
-const prisma = new PrismaClient();
 
 // Get all chats for the current user
 export const getChats = async (req: Request, res: Response) => {

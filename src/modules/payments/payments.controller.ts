@@ -1,9 +1,8 @@
 // backend/src/modules/payments/payments.controller.ts
 import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../../lib/prisma";
 import crypto from "crypto";
 
-const prisma = new PrismaClient();
 
 // Payment methods mapping (used by the frontend)
 export const PAYMENT_METHODS = {
