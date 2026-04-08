@@ -87,6 +87,30 @@ export const createBooking = async (req: Request, res: Response) => {
       }
     });
 
+    // Notify the property owner about the new booking
+    try {
+      const fullProperty = await prisma.property.findUnique({
+        where: { id: propertyId },
+        select: { ownerId: true, title: true },
+      });
+      const renter = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { fullName: true },
+      });
+      if (fullProperty && renter) {
+        await prisma.notification.create({
+          data: {
+            userId: fullProperty.ownerId,
+            title: "New Booking Request",
+            message: `${renter.fullName} has requested to book "${fullProperty.title}". Please call them to confirm.`,
+          },
+        });
+      }
+    } catch (notifErr) {
+      console.error("Failed to create notification:", notifErr);
+      // Non-fatal — booking was already created
+    }
+
     res.status(201).json({ success: true, data: booking });
   } catch (error: any) {
     console.error("Error creating booking:", error);

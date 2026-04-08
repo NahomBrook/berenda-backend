@@ -13,6 +13,7 @@ import locationRoutes from "./modules/locations/location.routes";
 import aiRoutes from "./modules/ai/ai.routes";
 import paymentRoutes from "./modules/payments/payments.routes";
 import favoriteRoutes from "./modules/favorites/favorite.routes";
+import notificationRoutes from "./modules/notifications/notification.routes";
 
 
 const app = express();
@@ -93,6 +94,7 @@ app.use("/api/locations", locationRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/favorites", favoriteRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 
 // ==================== LEGACY HEALTH CHECK ====================
