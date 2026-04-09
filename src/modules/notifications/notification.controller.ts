@@ -26,10 +26,10 @@ export const getNotifications = async (req: Request, res: Response) => {
 export const markAsRead = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id;
-    const { id } = req.params;
+    const id = String(req.params.id);
     if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-    const notification = await prisma.notification.findFirst({ where: { id, userId } });
+    const notification = await prisma.notification.findFirst({ where: { id, userId: String(userId) } });
     if (!notification) return res.status(404).json({ success: false, message: "Notification not found" });
 
     await prisma.notification.update({
