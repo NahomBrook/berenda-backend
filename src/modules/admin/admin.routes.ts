@@ -7,6 +7,8 @@ import {
   getUserById,
   updateUserRole,
   deleteUser,
+  banUser,
+  unbanUser,
   getAllProperties,
   approveProperty,
   rejectProperty,
@@ -29,6 +31,8 @@ router.get("/dashboard", getAdminDashboard);
 router.get("/users", getAllUsers);
 router.get("/users/:userId", getUserById);
 router.patch("/users/:userId/role", updateUserRole);
+router.patch("/users/:userId/ban", banUser);
+router.patch("/users/:userId/unban", unbanUser);
 router.delete("/users/:userId", deleteUser);
 
 // Property management

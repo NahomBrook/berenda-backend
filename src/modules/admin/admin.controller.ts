@@ -9,12 +9,25 @@ const getStringParam = (param: any): string => {
   return param || "";
 };
 
+// Helper to safely get number from query params
+const getNumberParam = (param: any, defaultValue: number = 1): number => {
+  const str = getStringParam(param);
+  if (!str) return defaultValue;
+  const num = Number(str);
+  return isNaN(num) ? defaultValue : num;
+};
+
+// Create a notification helper
+const createNotification = async (userId: string, title: string, message: string) => {
+  await prisma.notification.create({ data: { userId, title, message } });
+};
+
 // Get dashboard statistics
-export const getAdminDashboard = async (req: Request, res: Response) => {
+export const getAdminDashboard = async (_req: Request, res: Response) => {
   try {
     const currentYear = new Date().getFullYear();
     const startOfYear = new Date(currentYear, 0, 1);
-    
+
     const [
       totalUsers,
       totalProperties,
@@ -29,20 +42,20 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
       prisma.booking.count(),
       prisma.property.count({ where: { approvalStatus: "pending" } }),
       prisma.booking.aggregate({
-        where: { 
-          createdAt: { gte: startOfYear }, 
-          status: "confirmed" 
+        where: {
+          createdAt: { gte: startOfYear },
+          status: "confirmed"
         },
         _sum: { totalPrice: true },
       }),
       prisma.user.findMany({
         take: 5,
         orderBy: { createdAt: "desc" },
-        select: { 
-          id: true, 
-          fullName: true, 
-          email: true, 
-          createdAt: true 
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          createdAt: true
         },
       }),
       prisma.booking.findMany({
@@ -103,6 +116,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
           email: true,
           username: true,
           isVerified: true,
+          settings: true,
           createdAt: true,
           roles: {
             include: { role: true },
@@ -132,19 +146,10 @@ export const getAllUsers = async (req: Request, res: Response) => {
   }
 };
 
-// Helper to safely get number from query params
-const getNumberParam = (param: any, defaultValue: number = 1): number => {
-  const str = getStringParam(param);
-  if (!str) return defaultValue;
-  const num = Number(str);
-  return isNaN(num) ? defaultValue : num;
-};
-
-
 export const getUserById = async (req: Request, res: Response) => {
   try {
     const userId = getStringParam(req.params.userId);
-    
+
     if (!userId) {
       return res.status(400).json({ success: false, message: "User ID is required" });
     }
@@ -180,31 +185,26 @@ export const updateUserRole = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "User ID and role name are required" });
     }
 
-    // Prevent self-role demotion
     if (userId === currentUserId) {
       return res.status(403).json({ success: false, message: "Cannot change your own role" });
     }
 
-    // Get role ID
     const role = await prisma.role.findUnique({ where: { name: roleName } });
     if (!role) {
       return res.status(404).json({ success: false, message: "Role not found" });
     }
 
-    // Delete existing roles and add new
     await prisma.userRole.deleteMany({ where: { userId } });
-    await prisma.userRole.create({
-      data: { userId, roleId: role.id },
-    });
+    await prisma.userRole.create({ data: { userId, roleId: role.id } });
 
-    res.json({ success: true, message:  `User role updated to ${roleName}` });
+    res.json({ success: true, message: `User role updated to ${roleName}` });
   } catch (error) {
     console.error("Error in updateUserRole:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
-// Delete user
+// Delete user (hard delete)
 export const deleteUser = async (req: Request, res: Response) => {
   try {
     const userId = getStringParam(req.params.userId);
@@ -223,6 +223,110 @@ export const deleteUser = async (req: Request, res: Response) => {
     res.json({ success: true, message: "User deleted successfully" });
   } catch (error) {
     console.error("Error in deleteUser:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// Ban user
+export const banUser = async (req: Request, res: Response) => {
+  try {
+    const userId = getStringParam(req.params.userId);
+    const { reason } = req.body;
+    const adminId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "User ID is required" });
+    }
+
+    if (userId === adminId) {
+      return res.status(403).json({ success: false, message: "Cannot ban yourself" });
+    }
+
+    const banReason = reason || "Violation of terms of service";
+
+    // Read existing settings so we don't wipe other keys (e.g. language)
+    const existing = await prisma.user.findUnique({ where: { id: userId }, select: { settings: true } });
+    const currentSettings = (existing?.settings as Record<string, any>) || {};
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        settings: {
+          ...currentSettings,
+          isBanned: true,
+          banReason,
+          bannedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    await createNotification(
+      userId,
+      "Account Banned",
+      `Your account has been suspended. Reason: ${banReason}`
+    );
+
+    await prisma.adminAction.create({
+      data: {
+        adminId,
+        actionType: "BAN_USER",
+        targetEntity: "User",
+        targetId: userId,
+        notes: `User banned. Reason: ${banReason}`,
+      },
+    });
+
+    res.json({ success: true, message: "User banned successfully" });
+  } catch (error) {
+    console.error("Error in banUser:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// Unban user
+export const unbanUser = async (req: Request, res: Response) => {
+  try {
+    const userId = getStringParam(req.params.userId);
+    const adminId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "User ID is required" });
+    }
+
+    const existing = await prisma.user.findUnique({ where: { id: userId }, select: { settings: true } });
+    const currentSettings = (existing?.settings as Record<string, any>) || {};
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        settings: {
+          ...currentSettings,
+          isBanned: false,
+          banReason: null,
+          bannedAt: null,
+        },
+      },
+    });
+
+    await createNotification(
+      userId,
+      "Account Reinstated",
+      "Your account ban has been lifted. You can now use Berenda again."
+    );
+
+    await prisma.adminAction.create({
+      data: {
+        adminId,
+        actionType: "UNBAN_USER",
+        targetEntity: "User",
+        targetId: userId,
+        notes: "User unbanned",
+      },
+    });
+
+    res.json({ success: true, message: "User unbanned successfully" });
+  } catch (error) {
+    console.error("Error in unbanUser:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
@@ -247,34 +351,21 @@ export const getAllProperties = async (req: Request, res: Response) => {
         take: limit,
         include: {
           owner: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-              username: true,
-            },
+            select: { id: true, fullName: true, email: true, username: true },
           },
-          amenities: {
-            include: { amenity: true },
-          },
+          amenities: { include: { amenity: true } },
           media: true,
-          _count: {
-            select: { bookings: true, favorites: true },
-          },
+          _count: { select: { bookings: true, favorites: true } },
         },
         orderBy: { createdAt: "desc" },
       }),
       prisma.property.count({ where }),
     ]);
- res.json({
+
+    res.json({
       success: true,
       data: properties,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
     console.error("Error in getAllProperties:", error);
@@ -282,7 +373,7 @@ export const getAllProperties = async (req: Request, res: Response) => {
   }
 };
 
-// Approve property
+// Approve property — notifies host
 export const approveProperty = async (req: Request, res: Response) => {
   try {
     const propertyId = getStringParam(req.params.propertyId);
@@ -295,19 +386,25 @@ export const approveProperty = async (req: Request, res: Response) => {
     const property = await prisma.property.update({
       where: { id: propertyId },
       data: { approvalStatus: "approved" },
-      include: { owner: { select: { email: true, fullName: true } } },
+      include: { owner: { select: { id: true, email: true, fullName: true } } },
     });
 
-    // Log admin action
-    await prisma.adminAction.create({
-      data: {
-        adminId,
-        actionType: "APPROVE_PROPERTY",
-        targetEntity: "Property",
-        targetId: propertyId,
-        notes: `Property "${property.title}" approved`,
-      },
-    });
+    await Promise.all([
+      createNotification(
+        property.owner.id,
+        "Property Approved",
+        `Great news! Your property "${property.title}" has been approved and is now live on Berenda.`
+      ),
+      prisma.adminAction.create({
+        data: {
+          adminId,
+          actionType: "APPROVE_PROPERTY",
+          targetEntity: "Property",
+          targetId: propertyId,
+          notes: `Property "${property.title}" approved`,
+        },
+      }),
+    ]);
 
     res.json({ success: true, data: property, message: "Property approved successfully" });
   } catch (error) {
@@ -316,7 +413,7 @@ export const approveProperty = async (req: Request, res: Response) => {
   }
 };
 
-// Reject property
+// Reject property — notifies host
 export const rejectProperty = async (req: Request, res: Response) => {
   try {
     const propertyId = getStringParam(req.params.propertyId);
@@ -330,18 +427,27 @@ export const rejectProperty = async (req: Request, res: Response) => {
     const property = await prisma.property.update({
       where: { id: propertyId },
       data: { approvalStatus: "rejected" },
+      include: { owner: { select: { id: true, fullName: true } } },
     });
 
-    // Log admin action
-    await prisma.adminAction.create({
-      data: {
-        adminId,
-        actionType: "REJECT_PROPERTY",
-        targetEntity: "Property",
-        targetId: propertyId,
-        notes:  `Property "${property.title}" rejected. Reason: ${reason || "Not specified"}`,
-      },
-    });
+    const rejectionReason = reason || "Does not meet our listing requirements";
+
+    await Promise.all([
+      createNotification(
+        property.owner.id,
+        "Property Not Approved",
+        `Your property "${property.title}" was not approved. Reason: ${rejectionReason}`
+      ),
+      prisma.adminAction.create({
+        data: {
+          adminId,
+          actionType: "REJECT_PROPERTY",
+          targetEntity: "Property",
+          targetId: propertyId,
+          notes: `Property "${property.title}" rejected. Reason: ${rejectionReason}`,
+        },
+      }),
+    ]);
 
     res.json({ success: true, data: property, message: "Property rejected" });
   } catch (error) {
@@ -350,7 +456,7 @@ export const rejectProperty = async (req: Request, res: Response) => {
   }
 };
 
-// Delete property (soft delete)
+// Delete property (soft delete) — notifies host
 export const deleteProperty = async (req: Request, res: Response) => {
   try {
     const propertyId = getStringParam(req.params.propertyId);
@@ -363,17 +469,25 @@ export const deleteProperty = async (req: Request, res: Response) => {
     const property = await prisma.property.update({
       where: { id: propertyId },
       data: { deletedAt: new Date() },
+      include: { owner: { select: { id: true } } },
     });
 
-    await prisma.adminAction.create({
-      data: {
-        adminId,
-        actionType: "DELETE_PROPERTY",
-        targetEntity: "Property",
-        targetId: propertyId,
-        notes: `Property "${property.title}" soft deleted`,
-      },
-    });
+    await Promise.all([
+      createNotification(
+        property.owner.id,
+        "Property Removed",
+        `Your property "${property.title}" has been removed from Berenda by an administrator.`
+      ),
+      prisma.adminAction.create({
+        data: {
+          adminId,
+          actionType: "DELETE_PROPERTY",
+          targetEntity: "Property",
+          targetId: propertyId,
+          notes: `Property "${property.title}" removed`,
+        },
+      }),
+    ]);
 
     res.json({ success: true, message: "Property deleted successfully" });
   } catch (error) {
@@ -394,7 +508,8 @@ export const getAllBookings = async (req: Request, res: Response) => {
     if (status && status !== "all") {
       where = { status };
     }
- const [bookings, total] = await Promise.all([
+
+    const [bookings, total] = await Promise.all([
       prisma.booking.findMany({
         where,
         skip,
@@ -412,12 +527,7 @@ export const getAllBookings = async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: bookings,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
     console.error("Error in getAllBookings:", error);
@@ -425,7 +535,7 @@ export const getAllBookings = async (req: Request, res: Response) => {
   }
 };
 
-// Update booking status
+// Update booking status — notifies the renter
 export const updateBookingStatus = async (req: Request, res: Response) => {
   try {
     const bookingId = getStringParam(req.params.bookingId);
@@ -441,19 +551,34 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
       data: { status },
       include: {
         property: { select: { title: true } },
-        renter: { select: { email: true, fullName: true } },
+        renter: { select: { id: true, email: true, fullName: true } },
       },
     });
 
-    await prisma.adminAction.create({
-      data: {
-        adminId,
-        actionType: "UPDATE_BOOKING",
-        targetEntity: "Booking",
-        targetId: bookingId,
-        notes: `Booking status updated to ${status}`,
-      },
-    });
+    const statusMessages: Record<string, string> = {
+      confirmed: `Your booking for "${booking.property.title}" has been confirmed. Enjoy your stay!`,
+      approved: `Your booking for "${booking.property.title}" has been approved.`,
+      rejected: `Your booking for "${booking.property.title}" has been rejected.`,
+      cancelled: `Your booking for "${booking.property.title}" has been cancelled.`,
+      completed: `Your stay at "${booking.property.title}" has been marked as completed. Thank you!`,
+    };
+
+    await Promise.all([
+      createNotification(
+        booking.renter.id,
+        "Booking Update",
+        statusMessages[status] || `Your booking for "${booking.property.title}" status has been updated to ${status}.`
+      ),
+      prisma.adminAction.create({
+        data: {
+          adminId,
+          actionType: "UPDATE_BOOKING",
+          targetEntity: "Booking",
+          targetId: bookingId,
+          notes: `Booking status updated to ${status}`,
+        },
+      }),
+    ]);
 
     res.json({ success: true, data: booking, message: "Booking status updated" });
   } catch (error) {
@@ -473,9 +598,7 @@ export const getAdminActions = async (req: Request, res: Response) => {
       prisma.adminAction.findMany({
         skip,
         take: limit,
-        include: {
-          admin: { select: { fullName: true, email: true } },
-        },
+        include: { admin: { select: { fullName: true, email: true } } },
         orderBy: { createdAt: "desc" },
       }),
       prisma.adminAction.count(),
@@ -484,12 +607,7 @@ export const getAdminActions = async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: actions,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
     console.error("Error in getAdminActions:", error);
