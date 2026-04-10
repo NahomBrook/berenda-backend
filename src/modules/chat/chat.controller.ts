@@ -11,7 +11,7 @@ export const getChats = async (req: Request, res: Response) => {
     console.log("Fetching chats for user:", userId);
 
     if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     const chats = await prisma.chat.findMany({
@@ -88,7 +88,7 @@ export const getChats = async (req: Request, res: Response) => {
     res.json({ chats: formattedChats });
   } catch (error) {
     console.error("Error in getChats:", error);
-    res.status(500).json({ message: "Failed to fetch chats" });
+    res.status(500).json({ success: false, message: "Failed to fetch chats" });
   }
 };
 
@@ -99,7 +99,7 @@ export const getUnreadCount = async (req: Request, res: Response) => {
     const userId = userFromToken?.userId || userFromToken?.id;
 
     if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     // Get all chats for the user
@@ -122,7 +122,7 @@ export const getUnreadCount = async (req: Request, res: Response) => {
     res.json({ count: unreadCount });
   } catch (error) {
     console.error("Error in getUnreadCount:", error);
-    res.status(500).json({ message: "Failed to fetch unread count" });
+    res.status(500).json({ success: false, message: "Failed to fetch unread count" });
   }
 };
 
@@ -134,11 +134,11 @@ export const createChat = async (req: Request, res: Response) => {
     const { participantId } = req.body;
 
     if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     if (!participantId) {
-      return res.status(400).json({ message: "Participant ID is required" });
+      return res.status(400).json({ success: false, message: "Participant ID is required" });
     }
 
     // Check if chat already exists
@@ -167,7 +167,7 @@ export const createChat = async (req: Request, res: Response) => {
     res.json({ chatId: newChat.id });
   } catch (error) {
     console.error("Error in createChat:", error);
-    res.status(500).json({ message: "Failed to create chat" });
+    res.status(500).json({ success: false, message: "Failed to create chat" });
   }
 };
 
@@ -181,7 +181,7 @@ export const getChatById = async (req: Request, res: Response) => {
 
 
     if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     const chat = await prisma.chat.findFirst({
@@ -205,7 +205,7 @@ export const getChatById = async (req: Request, res: Response) => {
     });
 
     if (!chat) {
-      return res.status(404).json({ message: "Chat not found" });
+      return res.status(404).json({ success: false, message: "Chat not found" });
     }
 
     const otherParticipant = chat.participants.find(
@@ -221,7 +221,7 @@ export const getChatById = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Error in getChatById:", error);
-    res.status(500).json({ message: "Failed to fetch chat" });
+    res.status(500).json({ success: false, message: "Failed to fetch chat" });
   }
 };
 
@@ -233,7 +233,7 @@ export const getMessages = async (req: Request, res: Response) => {
     const chatId = req.params.id as string;
 
     if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     // Verify user is part of the chat
@@ -242,7 +242,7 @@ export const getMessages = async (req: Request, res: Response) => {
     });
 
     if (!participant) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     const messages = await prisma.message.findMany({
@@ -265,7 +265,7 @@ export const getMessages = async (req: Request, res: Response) => {
     res.json({ messages });
   } catch (error) {
     console.error("Error in getMessages:", error);
-    res.status(500).json({ message: "Failed to fetch messages" });
+    res.status(500).json({ success: false, message: "Failed to fetch messages" });
   }
 };
 
@@ -278,11 +278,11 @@ export const sendMessage = async (req: Request, res: Response) => {
     const { message } = req.body;
 
     if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     if (!message || !message.trim()) {
-      return res.status(400).json({ message: "Message is required" });
+      return res.status(400).json({ success: false, message: "Message is required" });
     }
 
     // Verify user is part of the chat
@@ -291,7 +291,7 @@ export const sendMessage = async (req: Request, res: Response) => {
     });
 
     if (!participant) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     const newMessage = await prisma.message.create({
@@ -312,6 +312,6 @@ export const sendMessage = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Error in sendMessage:", error);
-    res.status(500).json({ message: "Failed to send message" });
+    res.status(500).json({ success: false, message: "Failed to send message" });
   }
 };

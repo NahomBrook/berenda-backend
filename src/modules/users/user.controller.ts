@@ -2,7 +2,7 @@
 import { Request, Response } from "express";
 import prisma from "../../lib/prisma";
 
-export const listUsers = async (req: Request, res: Response) => {
+export const listUsers = async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
       select: {
@@ -151,33 +151,6 @@ export const getUserSettings = async (req: Request, res: Response) => {
   }
 };
 
-export const updateUserLocation = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user?.userId || (req as any).user?.id;
-    if (!userId) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
-
-    const { latitude, longitude } = req.body;
-    if (typeof latitude !== "number" || typeof longitude !== "number") {
-      return res.status(400).json({ success: false, message: "latitude and longitude must be numbers" });
-    }
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        lastLatitude: latitude,
-        lastLongitude: longitude,
-        lastLocationAt: new Date(),
-      },
-    });
-
-    res.json({ success: true, message: "Location updated" });
-  } catch (error) {
-    console.error("Error updating user location:", error);
-    res.status(500).json({ success: false, message: "Failed to update location" });
-  }
-};
 
 export const updateUserSettings = async (req: Request, res: Response) => {
   try {

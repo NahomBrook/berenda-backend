@@ -19,9 +19,6 @@ model User {
   profileImageUrl  String?
   isVerified       Boolean           @default(false)
   settings         Json?
-  lastLatitude     Float?
-  lastLongitude    Float?
-  lastLocationAt   DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?

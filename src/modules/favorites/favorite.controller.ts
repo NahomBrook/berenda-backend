@@ -104,7 +104,7 @@ export const getFavorites = async (req: Request, res: Response) => {
     console.error("Error fetching favorites:", error);
     res.status(500).json({
       success: false,
-      error: "Failed to fetch favorites",
+      message: "Failed to fetch favorites",
     });
   }
 };
@@ -174,7 +174,7 @@ export const addFavorite = async (req: Request, res: Response) => {
     console.error("Error adding favorite:", error);
     res.status(500).json({
       success: false,
-      error: "Failed to add favorite",
+      message: "Failed to add favorite",
     });
   }
 };
@@ -218,7 +218,7 @@ export const removeFavorite = async (req: Request, res: Response) => {
     console.error("Error removing favorite:", error);
     res.status(500).json({
       success: false,
-      error: "Failed to remove favorite",
+      message: "Failed to remove favorite",
     });
   }
 };
