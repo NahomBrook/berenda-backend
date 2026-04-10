@@ -11,6 +11,7 @@ router.get("/profile", verifyToken, UsersController.getProfile);
 router.put("/profile", verifyToken, upload.single("avatar"), UsersController.updateProfile);
 router.get("/settings", verifyToken, UsersController.getUserSettings);
 router.put("/settings", verifyToken, UsersController.updateUserSettings);
+router.patch("/me/location", verifyToken, UsersController.updateUserLocation);
 
 // Generic route at the end
 router.get("/", UsersController.listUsers);
