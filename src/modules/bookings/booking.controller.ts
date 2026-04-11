@@ -102,7 +102,8 @@ export const createBooking = async (req: Request, res: Response) => {
           data: {
             userId: fullProperty.ownerId,
             title: "New Booking Request",
-            message: `${renter.fullName} has requested to book "${fullProperty.title}". Please call them to confirm.`,
+            message: `${renter.fullName} has requested to book "${fullProperty.title}". Go to your hosting dashboard to accept or decline.`,
+            link: "/profile?tab=hosting",
           },
         });
       }

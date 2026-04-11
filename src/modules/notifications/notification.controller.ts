@@ -12,6 +12,7 @@ export const getNotifications = async (req: Request, res: Response) => {
       where: { userId },
       orderBy: { createdAt: "desc" },
       take: 50,
+      select: { id: true, title: true, message: true, isRead: true, readAt: true, link: true, createdAt: true },
     });
 
     const unreadCount = notifications.filter((n) => !n.isRead).length;

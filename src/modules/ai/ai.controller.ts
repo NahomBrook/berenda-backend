@@ -11,16 +11,28 @@ type ConversationHistory = ConversationMessage[];
 const conversations = new Map<string, ConversationHistory>();
 
 const SYSTEM_INSTRUCTION = `
-You are the Berenda AI Assistant. You help users with the Berenda platform, a property rental and hosting platform in Addis Ababa.
-Always be polite, helpful, clear, and concise. Format responses clearly. Use emojis naturally.
-Here is your core knowledge base:
-1. Finding Properties: Users can search (e.g., 'Bole', 'Kazanchis'), filter by price and bedrooms, and check dates.
-2. Booking: 1. Find property 2. Select dates 3. Add guests 4. Check availability 5. Complete payment.
-3. Hosting: 1. Click 'Host a Berenda' 2. Add details/photos 3. Set monthly price 4. Set map location 5. Submit.
-4. Areas in Addis Ababa: Bole (Upscale, embassies, nightlife), Kazanchis (Business district, UNECA/AU), Megenagna (Shopping), Piassa (Historic), Entoto (Mountain views).
-5. Amenities: WiFi, Kitchen, Washer/Dryer, AC, Heating, Pool, Free Parking, Pet Friendly, TV.
-6. Pricing: Properties are priced MONTHLY. Users can filter by price range.
-If the user asks something outside this scope, politely relate it back to Berenda if possible, or explain you are specialized in Berenda's platform.
+You are the Berenda (በረንዳ) AI Assistant — a friendly, knowledgeable guide for the Berenda property rental platform in Addis Ababa, Ethiopia.
+Your personality: warm, concise, locally-aware. You know Addis Ababa well. Use emojis naturally but sparingly.
+NEVER include image URLs, Cloudinary links, or markdown images in your responses.
+If you know the user's name, address them by it naturally.
+
+Core knowledge:
+1. Finding Properties: Search by area (Bole, Kazanchis, Megenagna, Piassa, Entoto), filter by price and bedrooms, pick dates.
+2. Booking flow: Find property → Select dates (check-in/check-out must be different days) → Add guests → Check availability → Pay via Chapa (Telebirr, CBE, card).
+3. Hosting flow: Click "Host a Berenda" → Add title, description, photos → Set monthly price → Pin map location → Submit for admin review. Approval takes 1-2 days.
+4. Addis Ababa areas:
+   - Bole: Upscale, embassies, nightlife, near Bole International Airport.
+   - Kazanchis: Business district, UNECA/AU, corporate offices.
+   - Megenagna: Shopping, everyday conveniences, family-friendly.
+   - Piassa: Historic, cultural, lively local atmosphere.
+   - Entoto: Mountain views, fresh air, quieter.
+5. Amenities available: WiFi, Kitchen, Washer/Dryer, AC, Heating, Pool, Free Parking, Pet Friendly, TV.
+6. Pricing: All properties priced MONTHLY in ETB (Ethiopian Birr).
+7. Payments: Processed via Chapa — supports Telebirr, CBE Birr, bank transfer, card.
+8. After booking, the host must accept/decline the request from their hosting dashboard.
+
+When helping a user find a property, ask about: area preference, budget (ETB/month), number of guests, and dates.
+If asked something outside Berenda, politely say you specialize in Berenda and redirect.
 `;
 
 const AREA_KB: Record<string, { title: string; description: string }> = {
@@ -47,6 +59,7 @@ const AREA_KB: Record<string, { title: string; description: string }> = {
 };
 
 const normalizeText = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+const hasAmharic = (text: string) => /[\u1200-\u137F]/.test(text);
 
 const getConversationKey = (userId: string, conversationId?: string) => {
   const cid = typeof conversationId === "string" ? conversationId.trim() : "";
@@ -93,8 +106,9 @@ const isGreeting = (text: string) => {
 const buildRuleBasedResponse = async (opts: {
   message: string;
   history: ConversationHistory;
+  amharic?: boolean;
 }) => {
-  const { message, history } = opts;
+  const { message, history, amharic = false } = opts;
   const normalized = normalizeText(message);
 
   const lastUser = [...history]
@@ -108,15 +122,27 @@ const buildRuleBasedResponse = async (opts: {
   const price = extractPriceRange(effectiveText);
 
   if (isGreeting(message) || normalized.includes("your name") || normalized.includes("who are you")) {
+    if (amharic) {
+      return [
+        "👋 ሰላም! እኔ የበረንዳ AI ረዳትዎ ነኝ።",
+        "",
+        "ልረዳዎ የምችለው:",
+        "- በአዲስ አበባ ቤቶችን ማፈላለግ (ቦሌ፣ ካዛንቺስ፣ መገናኛ፣ ፒያሳ፣ እንጦጦ)",
+        "- ቦታ ማስያዝ እና ክፍያ",
+        "- ቤትዎን ማስተናገድ ሂደት",
+        "",
+        "ምን ይፈልጋሉ? (አካባቢ + ዋጋ + ቀን)",
+      ].join("\n");
+    }
     return [
-      "👋 Hi! I’m your Berenda AI Assistant.",
+      "👋 Hi! I'm your Berenda AI Assistant.",
       "",
       "I can help you:",
       "- Find properties in Addis Ababa (Bole, Kazanchis, Megenagna, Piassa, Entoto)",
       "- Understand bookings and payments",
       "- Explain how to host your property on Berenda",
       "",
-      "Tell me what you’re looking for (area + budget + dates/guests).",
+      "Tell me what you're looking for (area + budget + dates/guests).",
     ].join("\n");
   }
 
@@ -124,6 +150,18 @@ const buildRuleBasedResponse = async (opts: {
   const wantsHosting = /host|hosting|list|become a host|berenda host/.test(normalized);
 
   if (wantsBooking) {
+    if (amharic) {
+      return [
+        "✅ በበረንዳ ቦታ የማስያዝ ሂደት:",
+        "1) ቤቱን ይምረጡ",
+        "2) የመግቢያ እና ወጪ ቀኖችን ያስቀምጡ",
+        "3) የእንግዳ ቁጥር ያክሉ",
+        "4) መገኛነቱን ያረጋግጡ",
+        "5) በቻፓ (ቴሌቢር/CBE/ካርድ/ባንክ) ክፍያ ይፈጽሙ",
+        "",
+        "አካባቢ እና ዋጋዎን ቢነግሩኝ ጥሩ አማራጮችን ማሳየት እችላለሁ።",
+      ].join("\n");
+    }
     return [
       "✅ Booking flow on Berenda:",
       "1) Choose the property",
@@ -137,15 +175,27 @@ const buildRuleBasedResponse = async (opts: {
   }
 
   if (wantsHosting) {
+    if (amharic) {
+      return [
+        "🏡 በበረንዳ ቤት ማስተናገድ:",
+        "1) «ቤረንዳ አስተናግድ» ይጫኑ",
+        "2) ዝርዝር እና ፎቶ ያክሉ",
+        "3) ወርሃዊ ዋጋ ያስቀምጡ",
+        "4) የካርታ አቀማመጥ ያስቀምጡ",
+        "5) ለፍተሻ ያስገቡ",
+        "",
+        "ምን አይነት ቤት (ስቱዲዮ፣ አፓርትመንት፣ ቤት)? አካባቢ እና ዋጋ ቢነግሩኝ ልረዳዎ እችላለሁ።",
+      ].join("\n");
+    }
     return [
       "🏡 Hosting on Berenda:",
-      "1) Click “Host a Berenda”",
+      "1) Click 'Host a Berenda'",
       "2) Add details and photos",
       "3) Set your monthly price",
       "4) Add your map location",
       "5) Submit for review",
       "",
-      "Want to host a studio, apartment, or a family home? Share the area and your monthly price and I’ll guide you.",
+      "Want to host a studio, apartment, or a family home? Share the area and your monthly price and I'll guide you.",
     ].join("\n");
   }
 
@@ -182,7 +232,7 @@ const buildRuleBasedResponse = async (opts: {
         include: {
           media: {
             where: { mediaType: "image" },
-            take: 3,
+            take: 1,
           },
         },
         take: 4,
@@ -190,21 +240,34 @@ const buildRuleBasedResponse = async (opts: {
       });
 
       if (properties.length === 0) {
+        if (amharic) {
+          return [
+            "በዚህ አካባቢ/ዋጋ ተስማሚ ቤቶችን አላገኘሁም።",
+            "",
+            "ዋጋዎን ትንሽ ቀይረው ወይም ሌላ አካባቢ (ቦሌ፣ ካዛንቺስ፣ መገናኛ፣ ፒያሳ፣ እንጦጦ) ይሞክሩ።",
+          ].join("\n");
+        }
         return [
-          "I couldn’t find exact matches with that area/budget right now.",
+          "I couldn't find exact matches with that area/budget right now.",
           "",
           "Try adjusting your budget slightly or choosing a nearby area (Bole, Kazanchis, Megenagna, Piassa, Entoto).",
         ].join("\n");
       }
 
-      const lines = properties.map((p) => {
-        const img = p.media?.[0]?.mediaUrl ? ` ${p.media[0].mediaUrl}` : "";
-        return `- **${p.title}** (${p.location}) — ${p.monthlyPrice}/month${img}`;
-      });
+      const lines = properties.map((p) => `- **${p.title}** (${p.location}) — ${p.monthlyPrice}/month`);
 
-      const refine: string[] = [];
-      refine.push("Want me to narrow it further by bedrooms/guests/dates?");
-      if (price.max !== undefined) refine.push(`I’ll focus on options under ${price.max}/month.`);
+      if (amharic) {
+        return [
+          "ምርጫዎ ጋር የሚስማሙ የበረንዳ ቤቶች:",
+          "",
+          ...lines,
+          "",
+          "ተጨማሪ በክፍሎች/ቀን ልጣራ?",
+        ].join("\n");
+      }
+
+      const refine: string[] = ["Want me to narrow it further by bedrooms/guests/dates?"];
+      if (price.max !== undefined) refine.push(`I'll focus on options under ${price.max}/month.`);
 
       return [
         "Here are some Berenda options that match your preferences:",
@@ -225,6 +288,16 @@ const buildRuleBasedResponse = async (opts: {
   }
 
   if (normalized.includes("what can you do") || normalized.includes("help")) {
+    if (amharic) {
+      return [
+        "ልረዳዎ የምችለው:",
+        "- በአዲስ አበባ ቤቶችን በአካባቢ እና ዋጋ ማፈላለግ",
+        "- ቦታ ማስያዝ እና ክፍያ ማብራሪያ",
+        "- ቤትዎን ማስተናገድ ሂደት",
+        "",
+        "አካባቢ + ዋጋ + ቀን ቢነግሩኝ ልጀምር።",
+      ].join("\n");
+    }
     return [
       "I can help with:",
       "- Finding properties in Addis Ababa by area and budget",
@@ -232,6 +305,16 @@ const buildRuleBasedResponse = async (opts: {
       "- Explaining how to host on Berenda",
       "",
       "Tell me: area + budget + dates (if you have them).",
+    ].join("\n");
+  }
+
+  if (amharic) {
+    return [
+      "በበረንዳ ላይ ቤት ፈልጎ ለማግኘት፣ ቦታ ለማስያዝ ወይም ቤት ለማስተናገድ ልረዳዎ እችላለሁ። 🙂",
+      "",
+      "ዛሬ ምን ይፈልጋሉ?",
+      "- ለመከራየት ቤት (አካባቢ + ዋጋ)?",
+      "- ወይም ቤት ለማስተናገድ ምክር?",
     ].join("\n");
   }
 
@@ -249,9 +332,13 @@ export const sendAIMessage = async (req: Request, res: Response): Promise<any> =
     // Allow anonymous users - use "anonymous" as default userId if not authenticated
     const userFromToken = (req as any).user;
     const userId = userFromToken?.userId || userFromToken?.id || "anonymous";
-    const { message, conversationId } = req.body as { message?: string; conversationId?: string };
+    const { message, conversationId, language, userName } = req.body as { message?: string; conversationId?: string; language?: string; userName?: string };
+    const useAmharic = language === "amharic" || hasAmharic(message || "");
 
-    console.log("🤖 AI Request:", { userId, message: message?.substring(0, 50) });
+    // Resolve name for personalization: optionalAuth attaches fullName, or fall back to body param
+    const resolvedName: string = userFromToken?.fullName || userName || "";
+
+    console.log("🤖 AI Request:", { userId, message: message?.substring(0, 50), useAmharic });
 
     if (!message || !message.trim()) {
       return res.status(400).json({ message: "Message is required" });
@@ -272,9 +359,13 @@ export const sendAIMessage = async (req: Request, res: Response): Promise<any> =
     if (apiKey) {
       try {
         const genAI = new GoogleGenerativeAI(apiKey);
+        const nameInstruction = resolvedName ? `\nThe user's name is ${resolvedName}. Address them by name naturally when appropriate.` : "";
+        const langInstruction = useAmharic
+          ? "\nIMPORTANT: The user is communicating in Amharic. You MUST respond entirely in Amharic (Ge'ez script). Do not use English."
+          : "";
         const model = genAI.getGenerativeModel({
           model: "gemini-2.5-flash",
-          systemInstruction: SYSTEM_INSTRUCTION,
+          systemInstruction: SYSTEM_INSTRUCTION + nameInstruction + langInstruction,
         });
 
         const chat = model.startChat({
@@ -292,7 +383,7 @@ export const sendAIMessage = async (req: Request, res: Response): Promise<any> =
 
     if (!responseText) {
       try {
-        responseText = await buildRuleBasedResponse({ message, history: history.slice() });
+        responseText = await buildRuleBasedResponse({ message, history: history.slice(), amharic: useAmharic });
       } catch (e) {
         console.warn("Rule-based fallback failed; using generic response.", e);
         responseText = [
@@ -302,6 +393,13 @@ export const sendAIMessage = async (req: Request, res: Response): Promise<any> =
         ].join("\n");
       }
     }
+
+    // Strip image URLs (Cloudinary or any direct image link) before sending
+    responseText = responseText
+      .replace(/!\[.*?\]\(.*?\)/g, "")
+      .replace(/https?:\/\/res\.cloudinary\.com\/\S+/gi, "")
+      .replace(/https?:\/\/\S+\.(jpg|jpeg|png|gif|webp|svg)(\?\S*)?/gi, "")
+      .trim();
 
     history.push({ role: "model", parts: [{ text: responseText }] });
 

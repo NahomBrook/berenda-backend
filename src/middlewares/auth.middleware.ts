@@ -59,6 +59,24 @@ export const verifyToken = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
+/** Attaches user to req if a valid token is present, but never rejects anonymous requests. */
+export const optionalAuth = async (req: Request, _res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return next();
+  const token = authHeader.split(" ")[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true, fullName: true, email: true },
+    });
+    if (user) {
+      (req as any).user = { userId: user.id, fullName: user.fullName, email: user.email };
+    }
+  } catch (_) {}
+  next();
+};
+
 export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
   const user = (req as any).user;
 
