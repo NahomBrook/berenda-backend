@@ -80,6 +80,9 @@ model Property {
   media          PropertyMedia[]
   reviews        Review[]
 
+  @@index([approvalStatus, isAvailable, deletedAt])
+  @@index([ownerId])
+  @@index([createdAt])
   @@map("properties")
 }
 
@@ -109,6 +112,8 @@ model PropertyMedia {
   createdAt  DateTime      @default(now())
   property   Property      @relation(fields: [propertyId], references: [id])
 
+  @@index([propertyId])
+  @@index([propertyId, mediaType])
   @@map("property_media")
 }
 

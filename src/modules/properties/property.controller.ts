@@ -88,46 +88,51 @@ export const getProperties = async (req: Request, res: Response) => {
       };
     }
 
-    const properties = await prisma.property.findMany({
-      where,
-      include: {
-        owner: { 
-          select: { 
-            id: true,
-            fullName: true, 
-            email: true,
-            profileImageUrl: true
-          } 
-        },
-        media: {
-          where: { mediaType: 'image' },
-          take: 5
-        },
-        reviews: {
-          select: {
-            rating: true,
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: getNumberParam(limit) || 20,
-      skip: getNumberParam(offset) || 0
-    });
+    const limitNum = getNumberParam(limit) || 20;
+    const offsetNum = getNumberParam(offset) || 0;
 
-    // Calculate average rating for each property
-    const propertiesWithRating = properties.map(property => {
-      const avgRating = property.reviews.length > 0
-        ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
-        : null;
-      
-      return {
-        ...property,
-        averageRating: avgRating,
-        reviewsCount: property.reviews.length
-      };
-    });
+    const [properties, total] = await Promise.all([
+      prisma.property.findMany({
+        where,
+        include: {
+          owner: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              profileImageUrl: true
+            }
+          },
+          media: {
+            where: { mediaType: 'image' },
+            take: 1,
+            select: { mediaUrl: true }
+          },
+          _count: { select: { reviews: true } }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limitNum,
+        skip: offsetNum
+      }),
+      prisma.property.count({ where })
+    ]);
 
-    const total = await prisma.property.count({ where });
+    // Fetch avg ratings in one aggregation query
+    const propertyIds = properties.map(p => p.id);
+    const ratingAggs = propertyIds.length > 0
+      ? await prisma.review.groupBy({
+          by: ['propertyId'],
+          where: { propertyId: { in: propertyIds } },
+          _avg: { rating: true },
+        })
+      : [];
+    const ratingMap = Object.fromEntries(ratingAggs.map(r => [r.propertyId, r._avg.rating]));
+
+    const propertiesWithRating = properties.map(property => ({
+      ...property,
+      averageRating: ratingMap[property.id] ?? null,
+      reviewsCount: property._count.reviews,
+    }));
 
     res.status(200).json({ 
       success: true, 
@@ -209,28 +214,28 @@ export const searchProperties = async (req: Request, res: Response) => {
       where,
       include: {
         owner: { select: { fullName: true, email: true } },
-        media: { take: 5 },
-        reviews: {
-          select: {
-            rating: true,
-          }
-        }
+        media: { where: { mediaType: 'image' }, take: 1, select: { mediaUrl: true } },
+        _count: { select: { reviews: true } }
       },
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: 20,
     });
 
-    const propertiesWithRating = properties.map(property => {
-      const avgRating = property.reviews.length > 0
-        ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
-        : null;
-      
-      return {
-        ...property,
-        averageRating: avgRating,
-        reviewsCount: property.reviews.length
-      };
-    });
+    const searchIds = properties.map(p => p.id);
+    const searchRatingAggs = searchIds.length > 0
+      ? await prisma.review.groupBy({
+          by: ['propertyId'],
+          where: { propertyId: { in: searchIds } },
+          _avg: { rating: true },
+        })
+      : [];
+    const searchRatingMap = Object.fromEntries(searchRatingAggs.map(r => [r.propertyId, r._avg.rating]));
+
+    const propertiesWithRating = properties.map(property => ({
+      ...property,
+      averageRating: searchRatingMap[property.id] ?? null,
+      reviewsCount: property._count.reviews,
+    }));
 
     res.json({ success: true, count: properties.length, data: propertiesWithRating });
   } catch (error) {
@@ -466,7 +471,7 @@ export const getPropertiesByLocation = async (req: Request, res: Response) => {
         approvalStatus: 'approved'
       },
       include: {
-        media: true,
+        media: { where: { mediaType: 'image' }, take: 1, select: { mediaUrl: true } },
         owner: {
           select: { fullName: true }
         }
