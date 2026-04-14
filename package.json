@@ -8,9 +8,9 @@
   },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "prisma db push && prisma generate && tsc --skipLibCheck",
+    "build": "prisma db push && prisma generate",
     "start": "node dist/server.js",
-    "vercel-build": "prisma migrate deploy && prisma generate",
+    "vercel-build": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node src/prisma/seed.ts",
