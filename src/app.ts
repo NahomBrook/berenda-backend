@@ -22,6 +22,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5000',
+  'https://berenda.vercel.app',
   'https://berenda-platform.vercel.app',
   'https://berenda-plc.vercel.app',
   'https://berenda-41a2.vercel.app',
