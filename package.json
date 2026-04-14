@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "prisma db push && prisma generate && tsc",
+    "build": "prisma db push && prisma generate && tsc --skipLibCheck",
     "start": "node dist/server.js",
     "vercel-build": "prisma migrate deploy && prisma generate",
     "prisma:generate": "prisma generate",
@@ -52,7 +52,7 @@
     "@types/express-session": "^1.18.2",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
-    "@types/node": "^25.3.0",
+    "@types/node": "^25.6.0",
     "@types/node-fetch": "^2.6.9",
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.17",
