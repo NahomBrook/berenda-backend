@@ -31,19 +31,17 @@ const allowedOrigins = [
 
 // Security middlewares
 app.use(helmet());
-app.use(cors({
+
+const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    
-    // Check if origin matches any allowed pattern
+
     const isAllowed = allowedOrigins.some(pattern => {
-      if (pattern instanceof RegExp) {
-        return pattern.test(origin);
-      }
+      if (pattern instanceof RegExp) return pattern.test(origin);
       return pattern === origin;
     });
-    
+
     if (isAllowed) {
       callback(null, true);
     } else {
@@ -53,7 +51,14 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+};
+
+app.use(cors(corsOptions));
+
+// Respond to ALL preflight OPTIONS requests immediately — before any auth
+// middleware runs. Without this, verifyToken returns 401 on the preflight
+// and the browser never sees the Access-Control-Allow-Origin header.
+app.options('*', cors(corsOptions));
 
 // Body parsing and cookies
 app.use(express.json({ limit: '10mb' }));
