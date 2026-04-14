@@ -1,5 +1,19 @@
 import http from "http";
+import { execSync } from "child_process";
 import app from "./app";
+
+// Run DB migrations before starting the server.
+// This guarantees every Render deploy applies pending migrations without
+// requiring any dashboard changes to the build command.
+try {
+  console.log("🔄 Running database migrations...");
+  execSync("npx prisma migrate deploy", { stdio: "inherit" });
+  console.log("✅ Migrations complete");
+} catch (err) {
+  // Log but don't crash — the server can still start if the DB is already
+  // up-to-date and the error is transient.
+  console.error("⚠️  Migration step failed (non-fatal):", err);
+}
 
 // Render automatically sets process.env.PORT
 const PORT = process.env.PORT || 5000;
