@@ -398,7 +398,7 @@ export const approveProperty = async (req: Request, res: Response) => {
         property.owner.id,
         "Property Approved",
         `Great news! Your property "${property.title}" has been approved and is now live on Berenda.`,
-        "/profile?tab=hosting"
+        `/listings/${propertyId}`
       ),
       prisma.adminAction.create({
         data: {
@@ -429,19 +429,20 @@ export const rejectProperty = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Property ID is required" });
     }
 
+    const rejectionReason = reason || "Does not meet our listing requirements";
+
     const property = await prisma.property.update({
       where: { id: propertyId },
-      data: { approvalStatus: "rejected" },
+      data: { approvalStatus: "rejected", rejectionReason },
       include: { owner: { select: { id: true, fullName: true } } },
     });
-
-    const rejectionReason = reason || "Does not meet our listing requirements";
 
     await Promise.all([
       createNotification(
         property.owner.id,
         "Property Not Approved",
-        `Your property "${property.title}" was not approved. Reason: ${rejectionReason}`
+        `Your property "${property.title}" was not approved. Reason: ${rejectionReason}`,
+        `/profile?tab=hosting&propertyId=${propertyId}`
       ),
       prisma.adminAction.create({
         data: {

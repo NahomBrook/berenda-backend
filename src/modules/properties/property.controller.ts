@@ -541,8 +541,6 @@ export const updatePropertyStatus = async (req: Request, res: Response) => {
   try {
     const id = getIdParam(req.params.id);
     const { approvalStatus } = req.body;
-    const userId = (req as any).user?.userId || (req as any).user?.id;
-
     if (!id) {
       return res.status(400).json({ success: false, message: "Invalid property ID" });
     }
@@ -553,13 +551,104 @@ export const updatePropertyStatus = async (req: Request, res: Response) => {
       data: { approvalStatus },
     });
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       message: `Property status updated to ${approvalStatus}`,
-      data: property 
+      data: property
     });
   } catch (error: any) {
     console.error("Error updating property status:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET BOOKED DATES — returns all confirmed/pending/approved booking ranges for a property
+// This is public so the date picker can block unavailable dates before login.
+export const getBookedDates = async (req: Request, res: Response) => {
+  try {
+    const id = getIdParam(req.params.id);
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Invalid property ID" });
+    }
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        propertyId: id,
+        status: { in: ["pending", "approved", "confirmed"] },
+        deletedAt: null,
+        endDate: { gte: new Date() }, // only future/current bookings matter
+      },
+      select: { startDate: true, endDate: true },
+    });
+
+    res.json({ success: true, data: bookings });
+  } catch (error: any) {
+    console.error("Error fetching booked dates:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// SUBMIT APPEAL — host submits an appeal for a rejected property
+export const submitAppeal = async (req: Request, res: Response) => {
+  try {
+    const id = getIdParam(req.params.id);
+    const ownerId = (req as any).user?.userId || (req as any).user?.id;
+    const { appealMessage } = req.body;
+
+    if (!id || !ownerId) {
+      return res.status(400).json({ success: false, message: "Invalid request" });
+    }
+    if (!appealMessage || !appealMessage.trim()) {
+      return res.status(400).json({ success: false, message: "Appeal message is required" });
+    }
+
+    // Verify ownership and that the property is actually rejected
+    const property = await prisma.property.findFirst({
+      where: { id, ownerId, deletedAt: null },
+    });
+
+    if (!property) {
+      return res.status(404).json({ success: false, message: "Property not found or unauthorized" });
+    }
+    if (property.approvalStatus !== "rejected") {
+      return res.status(400).json({ success: false, message: "Only rejected properties can be appealed" });
+    }
+
+    // Store appeal message on the property
+    await prisma.property.update({
+      where: { id },
+      data: { appealMessage: appealMessage.trim() },
+    });
+
+    // Notify all admins about the appeal
+    try {
+      const adminRole = await prisma.role.findUnique({ where: { name: "admin" } });
+      if (adminRole) {
+        const admins = await prisma.userRole.findMany({
+          where: { roleId: adminRole.id },
+          select: { userId: true },
+        });
+        const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { fullName: true } });
+        await Promise.all(
+          admins.map((a) =>
+            prisma.notification.create({
+              data: {
+                userId: a.userId,
+                title: "Property Appeal Submitted",
+                message: `${owner?.fullName || "A host"} has submitted an appeal for property "${property.title}".`,
+                link: `/admin/properties`,
+              },
+            }).catch(() => {})
+          )
+        );
+      }
+    } catch (notifErr) {
+      console.warn("Admin appeal notification failed (non-fatal):", notifErr);
+    }
+
+    res.json({ success: true, message: "Appeal submitted successfully" });
+  } catch (error: any) {
+    console.error("Error submitting appeal:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

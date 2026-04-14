@@ -70,6 +70,8 @@ model Property {
   maxGuests      Int?                   // Add this
   isAvailable    Boolean                @default(true)
   approvalStatus PropertyApprovalStatus @default(pending)
+  rejectionReason String?
+  appealMessage  String?
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
   deletedAt      DateTime?

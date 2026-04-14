@@ -15,6 +15,8 @@ router.get("/location/:location", propertyController.getPropertiesByLocation);
 //       "user" as the :id segment. It is protected, so we inline verifyToken.
 router.get("/user/properties", verifyToken, propertyController.getUserProperties);
 router.get("/:id", propertyController.getPropertyById);
+// Public: booked date ranges so the date picker can block unavailable dates
+router.get("/:id/booked-dates", propertyController.getBookedDates);
 
 // Availability check (nested under /:id) – public
 router.use("/:id", availabilityRouter);
@@ -25,9 +27,10 @@ router.use(verifyToken);
 // Create property
 router.post("/", propertyController.createProperty);
 
-// Update / delete property
+// Update / delete / appeal property
 router.patch("/:id", propertyController.updateProperty);
 router.delete("/:id", propertyController.deleteProperty);
+router.post("/:id/appeal", propertyController.submitAppeal);
 
 // Upload property images (max 10)
 router.post("/:propertyId/images", upload.array("images", 10), propertyController.uploadPropertyImages);
