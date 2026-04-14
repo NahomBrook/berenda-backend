@@ -17,9 +17,13 @@ const getNumberParam = (param: any, defaultValue: number = 1): number => {
   return isNaN(num) ? defaultValue : num;
 };
 
-// Create a notification helper
-const createNotification = async (userId: string, title: string, message: string) => {
-  await prisma.notification.create({ data: { userId, title, message } });
+// Create a notification helper — fire-and-forget, never throws
+const createNotification = async (userId: string, title: string, message: string, link?: string) => {
+  try {
+    await prisma.notification.create({ data: { userId, title, message, ...(link ? { link } : {}) } });
+  } catch (err) {
+    console.warn("Notification creation failed (non-fatal):", err);
+  }
 };
 
 // Get dashboard statistics
@@ -393,7 +397,8 @@ export const approveProperty = async (req: Request, res: Response) => {
       createNotification(
         property.owner.id,
         "Property Approved",
-        `Great news! Your property "${property.title}" has been approved and is now live on Berenda.`
+        `Great news! Your property "${property.title}" has been approved and is now live on Berenda.`,
+        "/profile?tab=hosting"
       ),
       prisma.adminAction.create({
         data: {
