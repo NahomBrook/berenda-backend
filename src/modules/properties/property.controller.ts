@@ -28,13 +28,14 @@ const getIdParam = (param: any): string | undefined => {
 // GET ALL PROPERTIES (With Full Filters including checkIn/checkOut)
 export const getProperties = async (req: Request, res: Response) => {
   try {
-    const { 
-      location, 
-      minPrice, 
-      maxPrice, 
+    const {
+      location,
+      minPrice,
+      maxPrice,
       checkIn,
       checkOut,
       bedrooms,
+      amenities,
       limit = '20',
       offset = '0'
     } = req.query;
@@ -86,6 +87,24 @@ export const getProperties = async (req: Request, res: Response) => {
           ]
         }
       };
+    }
+
+    // Amenities filter — must have ALL selected amenities
+    const amenitiesStr = getStringParam(amenities);
+    if (amenitiesStr) {
+      const amenityList = amenitiesStr.split(',').map(a => a.trim()).filter(Boolean);
+      if (amenityList.length > 0) {
+        where.AND = [
+          ...(where.AND || []),
+          ...amenityList.map(name => ({
+            amenities: {
+              some: {
+                amenity: { name: { equals: name, mode: 'insensitive' } }
+              }
+            }
+          }))
+        ];
+      }
     }
 
     const limitNum = getNumberParam(limit) || 20;
@@ -298,47 +317,51 @@ export const getPropertyById = async (req: Request, res: Response) => {
 // CREATE PROPERTY
 export const createProperty = async (req: Request, res: Response) => {
   try {
-    const { 
-      title, 
-      description, 
-      location, 
-      latitude, 
-      longitude, 
+    const {
+      title,
+      description,
+      location,
+      latitude,
+      longitude,
       monthlyPrice,
       bedrooms,
       bathrooms,
       maxGuests,
-      area
+      area,
+      isDraft,
     } = req.body;
-    
+
     const ownerId = (req as any).user?.userId || (req as any).user?.id;
 
     if (!ownerId) {
       return res.status(401).json({ success: false, message: "Unauthorized: No owner ID found" });
     }
 
-    // Validate required fields
-    if (!title || !description || !location || !monthlyPrice) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Missing required fields: title, description, location, monthlyPrice" 
+    // Validate required fields (drafts only require a title)
+    if (!isDraft && (!title || !description || !location || !monthlyPrice)) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: title, description, location, monthlyPrice"
       });
+    }
+    if (!title) {
+      return res.status(400).json({ success: false, message: "A title is required to save a draft" });
     }
 
     const newProperty = await prisma.property.create({
       data: {
         title,
-        description,
-        location,
+        description: description || "",
+        location: location || "",
         latitude: latitude ? parseFloat(latitude) : 0,
         longitude: longitude ? parseFloat(longitude) : 0,
-        monthlyPrice: parseFloat(monthlyPrice),
+        monthlyPrice: monthlyPrice ? parseFloat(monthlyPrice) : 0,
         bedrooms: bedrooms ? parseInt(bedrooms) : null,
         bathrooms: bathrooms ? parseFloat(bathrooms) : null,
         maxGuests: maxGuests ? parseInt(maxGuests) : null,
         area: area ? parseFloat(area) : null,
         ownerId,
-        approvalStatus: 'pending',
+        approvalStatus: isDraft ? 'draft' : 'pending',
       },
       include: {
         media: true
@@ -371,9 +394,19 @@ export const updateProperty = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "Property not found or unauthorized" });
     }
 
+    // Strip fields that should not be changed directly by property owners
+    const { approvalStatus, ownerId: _ownerId, deletedAt: _deletedAt, ...safeBody } = req.body;
+
+    // Allow draft → pending transition only (to submit for review)
+    const allowedStatusChange =
+      approvalStatus === 'pending' && existingProperty.approvalStatus === 'draft';
+    const dataToUpdate = allowedStatusChange
+      ? { ...safeBody, approvalStatus: 'pending' as const }
+      : safeBody;
+
     const updateResult = await prisma.property.update({
       where: { id },
-      data: req.body,
+      data: dataToUpdate,
     });
 
     res.status(200).json({ success: true, message: "Property updated successfully", data: updateResult });

@@ -183,7 +183,8 @@ export const updateUserRole = async (req: Request, res: Response) => {
   try {
     const userId = getStringParam(req.params.userId);
     const { roleName } = req.body;
-    const currentUserId = (req as any).user?.userId;
+    const currentUser = (req as any).user;
+    const currentUserId = currentUser?.userId;
 
     if (!userId || !roleName) {
       return res.status(400).json({ success: false, message: "User ID and role name are required" });
@@ -193,9 +194,17 @@ export const updateUserRole = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: "Cannot change your own role" });
     }
 
-    const role = await prisma.role.findUnique({ where: { name: roleName } });
+    // Only SUPER_ADMIN can grant or revoke ADMIN / SUPER_ADMIN roles
+    const adminRoles = ["ADMIN", "SUPER_ADMIN", "admin", "super_admin"];
+    if (adminRoles.some(r => r === roleName) && !currentUser?.isSuperAdmin) {
+      return res.status(403).json({ success: false, message: "Only Super Admin can grant or revoke Admin roles" });
+    }
+
+    const role = await prisma.role.findFirst({
+      where: { name: { equals: roleName, mode: "insensitive" } },
+    });
     if (!role) {
-      return res.status(404).json({ success: false, message: "Role not found" });
+      return res.status(404).json({ success: false, message: `Role "${roleName}" not found` });
     }
 
     await prisma.userRole.deleteMany({ where: { userId } });

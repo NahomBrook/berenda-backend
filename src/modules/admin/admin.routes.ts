@@ -1,6 +1,6 @@
 // backend/src/modules/admin/admin.routes.ts
 import { Router } from "express";
-import { verifyToken, isAdmin } from "../../middlewares/auth.middleware";
+import { verifyToken, isAdmin, isSuperAdmin } from "../../middlewares/auth.middleware";
 import {
   getAdminDashboard,
   getAllUsers,
@@ -30,7 +30,7 @@ router.get("/dashboard", getAdminDashboard);
 // User management
 router.get("/users", getAllUsers);
 router.get("/users/:userId", getUserById);
-router.patch("/users/:userId/role", updateUserRole);
+router.patch("/users/:userId/role", isSuperAdmin, updateUserRole);
 router.patch("/users/:userId/ban", banUser);
 router.patch("/users/:userId/unban", unbanUser);
 router.delete("/users/:userId", deleteUser);

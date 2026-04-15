@@ -256,6 +256,7 @@ enum PaymentStatus {
 }
 
 enum PropertyApprovalStatus {
+  draft
   pending
   approved
   rejected

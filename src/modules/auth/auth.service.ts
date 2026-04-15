@@ -39,6 +39,10 @@ export const registerUser = async (
   roleName = "USER",
   fullName?: string
 ) => {
+  // Friendly duplicate-email check before hitting the unique constraint
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) throw new Error("An account with this email already exists. Please log in instead.");
+
   const hashedPassword = await bcrypt.hash(password, 12);
   const role = await findOrCreateRole(roleName);
 

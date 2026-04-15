@@ -95,14 +95,17 @@ export const createBooking = async (req: Request, res: Response) => {
       });
       const renter = await prisma.user.findUnique({
         where: { id: userId },
-        select: { fullName: true },
+        select: { fullName: true, email: true, phone: true },
       });
       if (fullProperty && renter) {
+        const contactLine = renter.phone
+          ? `\nContact: ${renter.email} | ${renter.phone}`
+          : `\nContact: ${renter.email}`;
         await prisma.notification.create({
           data: {
             userId: fullProperty.ownerId,
             title: "New Booking Request",
-            message: `${renter.fullName} has requested to book "${fullProperty.title}". Go to your hosting dashboard to accept or decline.`,
+            message: `${renter.fullName} has requested to book "${fullProperty.title}".${contactLine}`,
             link: "/profile?tab=hosting",
           },
         });
