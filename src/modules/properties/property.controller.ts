@@ -395,19 +395,37 @@ export const updateProperty = async (req: Request, res: Response) => {
     }
 
     // Strip fields that should not be changed directly by property owners
-    const { approvalStatus, ownerId: _ownerId, deletedAt: _deletedAt, ...safeBody } = req.body;
+    const { approvalStatus, ownerId: _ownerId, deletedAt: _deletedAt, amenities, ...scalarBody } = req.body;
 
     // Allow draft → pending transition only (to submit for review)
     const allowedStatusChange =
       approvalStatus === 'pending' && existingProperty.approvalStatus === 'draft';
-    const dataToUpdate = allowedStatusChange
-      ? { ...safeBody, approvalStatus: 'pending' as const }
-      : safeBody;
+    const dataToUpdate: any = allowedStatusChange
+      ? { ...scalarBody, approvalStatus: 'pending' as const }
+      : scalarBody;
 
     const updateResult = await prisma.property.update({
       where: { id },
       data: dataToUpdate,
     });
+
+    // Update amenities if provided
+    if (Array.isArray(amenities)) {
+      // Delete existing property amenities
+      await prisma.propertyAmenity.deleteMany({ where: { propertyId: id } });
+      // Upsert each amenity and create the join record
+      for (const name of amenities) {
+        if (!name) continue;
+        const amenity = await prisma.amenity.upsert({
+          where: { name },
+          update: {},
+          create: { name },
+        });
+        await prisma.propertyAmenity.create({
+          data: { propertyId: id, amenityId: amenity.id },
+        });
+      }
+    }
 
     res.status(200).json({ success: true, message: "Property updated successfully", data: updateResult });
   } catch (error: any) {

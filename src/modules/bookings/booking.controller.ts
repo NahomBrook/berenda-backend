@@ -141,10 +141,15 @@ export const getUserBookings = async (req: Request, res: Response) => {
             title: true,
             location: true,
             monthlyPrice: true,
+            bedrooms: true,
+            bathrooms: true,
             media: {
               where: { mediaType: 'image' },
               take: 1,
               select: { mediaUrl: true }
+            },
+            amenities: {
+              include: { amenity: { select: { name: true } } }
             }
           }
         }
@@ -179,10 +184,9 @@ export const getBookingById = async (req: Request, res: Response) => {
       include: {
         property: {
           include: {
-            owner: {
-              select: { fullName: true, email: true, phone: true }
-            },
-            media: true
+            owner: { select: { fullName: true, email: true, phone: true } },
+            media: true,
+            amenities: { include: { amenity: true } },
           }
         }
       }
@@ -317,9 +321,8 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
     const booking = await prisma.booking.findFirst({
       where: { id },
       include: {
-        property: {
-          select: { ownerId: true }
-        }
+        property: { select: { ownerId: true, title: true } },
+        renter: { select: { id: true, fullName: true } },
       }
     });
 
@@ -336,10 +339,29 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
       data: { status }
     });
 
-    res.json({ 
-      success: true, 
+    // Notify the guest when host approves or rejects
+    try {
+      if (status === "approved" || status === "rejected") {
+        const isApproved = status === "approved";
+        await prisma.notification.create({
+          data: {
+            userId: booking.renter.id,
+            title: isApproved ? "Booking Approved!" : "Booking Declined",
+            message: isApproved
+              ? `Your booking for "${booking.property.title}" has been approved. Enjoy your stay!`
+              : `Your booking request for "${booking.property.title}" was declined by the host.`,
+            link: "/profile?tab=bookings",
+          },
+        });
+      }
+    } catch (notifErr) {
+      console.error("Failed to send booking status notification:", notifErr);
+    }
+
+    res.json({
+      success: true,
       message: `Booking status updated to ${status}`,
-      data: updatedBooking 
+      data: updatedBooking
     });
   } catch (error: any) {
     console.error("Error updating booking status:", error);
