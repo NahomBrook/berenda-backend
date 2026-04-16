@@ -149,7 +149,9 @@ export const getUserBookings = async (req: Request, res: Response) => {
               select: { mediaUrl: true }
             },
             amenities: {
-              include: { amenity: { select: { name: true } } }
+              select: {
+                amenity: { select: { name: true } }
+              }
             }
           }
         }
